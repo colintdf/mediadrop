@@ -26,7 +26,6 @@ class Integration(unittest.TestCase):
         self.http.app = self.app
         self.port = self.http.server_port
         threading.Thread(target=self.http.serve_forever, daemon=True).start()
-        self.cookie = ''
 
     def tearDown(self):
         self.app.queue.join()
@@ -35,9 +34,9 @@ class Integration(unittest.TestCase):
         self.http.server_close()
         self.temp.cleanup()
 
-    def request(self, path, body=None, raw=None, origin=None, metadata=None):
+    def request(self, path, body=None, raw=None, origin=None, metadata=None, trusted=True):
         client = http.client.HTTPConnection('127.0.0.1', self.port, timeout=15)
-        headers = {'Cookie': self.cookie, 'X-MediaDrop': '1'}
+        headers = {'X-MediaDrop': '1'} if trusted else {}
         if metadata is not None:
             headers['X-MediaDrop-Tags'] = quote(json.dumps(metadata))
         if origin:
@@ -46,15 +45,9 @@ class Integration(unittest.TestCase):
         headers['Content-Type'] = 'application/octet-stream' if raw is not None else 'application/json'
         client.request('POST' if payload is not None else 'GET', path, payload, headers)
         response = client.getresponse()
-        cookie = response.getheader('Set-Cookie')
-        if cookie:
-            self.cookie = cookie.split(';')[0]
         result = response.status, json.loads(response.read())
         client.close()
         return result
-
-    def login(self):
-        self.assertEqual(self.request('/api/login', {'password': self.app.config['password']})[0], 200)
 
     def folder(self):
         self.assertEqual(self.request('/api/folders', {'name': 'My music', 'path': str(self.dest)})[0], 201)
@@ -73,7 +66,6 @@ class Integration(unittest.TestCase):
         return self.request('/api/upload?' + urlencode({'folder': folder, 'name': name}), raw=data)
 
     def test_wav_conversion_mp3_copy_and_duplicate(self):
-        self.login()
         folder = self.folder()
         self.assertEqual(self.upload(folder, 'Test track.wav', self.wav())[0], 202)
         self.app.queue.join()
@@ -89,10 +81,9 @@ class Integration(unittest.TestCase):
         self.assertFalse(self.app.jobs[-1]['converted'])
         self.assertEqual(list(self.app.incoming.iterdir()), [])
 
-    def test_auth_origin_and_folder_validation(self):
-        self.assertEqual(self.request('/api/state')[0], 401)
-        self.assertEqual(self.request('/api/login', {'password': 'wrong'})[0], 401)
-        self.login()
+    def test_password_free_access_origin_and_folder_validation(self):
+        self.assertEqual(self.request('/api/state')[0], 200)
+        self.assertEqual(self.request('/api/folders', {'name':'Bad','path':str(self.dest)}, trusted=False)[0],403)
         self.assertEqual(self.request('/api/folders', {'name':'Bad','path':'relative'})[0], 400)
         self.assertEqual(self.request('/api/folders', {'name':'Bad','path':str(self.root/'missing')})[0], 400)
         self.assertEqual(self.request('/api/folders', {'name':'Bad','path':str(self.dest)}, origin='http://evil.example')[0], 403)
@@ -103,7 +94,6 @@ class Integration(unittest.TestCase):
         self.assertEqual(list(self.dest.iterdir()), [])
 
     def test_invalid_audio_is_failed_and_source_removed(self):
-        self.login()
         folder = self.folder()
         self.assertEqual(self.upload(folder, 'Not audio.wav', b'not a wav')[0], 202)
         self.app.queue.join()
@@ -112,7 +102,6 @@ class Integration(unittest.TestCase):
         self.assertEqual(list(self.app.incoming.iterdir()), [])
 
     def test_missing_external_folder_not_recreated(self):
-        self.login()
         folder = self.folder()
         self.dest.rmdir()
         self.assertEqual(self.upload(folder, 'song.wav', self.wav())[0], 400)
@@ -142,7 +131,6 @@ class Integration(unittest.TestCase):
         return subprocess.check_output(['ffmpeg', '-v', 'error', '-i', str(path), '-map', '0:a:0', '-c', 'copy', '-f', 'data', '-'])
 
     def test_320k_upload_tags_and_album_layout(self):
-        self.login()
         folder = self.folder()
         tags = {'title':'My title', 'artist':'Björk', 'album':'A record', 'album_artist':'Björk', 'track':'1/12', 'disc':'1/2', 'date':'2026', 'genre':'Electronic'}
         code, response = self.request('/api/upload?' + urlencode({'folder':folder, 'name':'Song.wav', 'layout':'album'}), raw=self.wav(), metadata=tags)
@@ -158,7 +146,6 @@ class Integration(unittest.TestCase):
         self.assertFalse((self.dest/'Björk'/'Albums').exists())
 
     def test_existing_library_scan_edit_move_and_conflict(self):
-        self.login()
         folder = self.folder()
         artist = self.dest/'An artist'
         artist.mkdir()
@@ -198,7 +185,6 @@ class Integration(unittest.TestCase):
         self.assertEqual(read_tags(moved)['title'],'')
 
     def test_scan_removes_deleted_and_excludes_symlinks(self):
-        self.login()
         self.folder()
         self.upload(self.app.config['folders'][0]['id'],'Known.wav', self.wav())
         self.app.queue.join()
@@ -210,7 +196,6 @@ class Integration(unittest.TestCase):
         self.assertEqual(self.request('/api/library')[1]['total'],0)
 
     def test_tags_rejected_before_upload_and_folder_sanitization(self):
-        self.login()
         folder=self.folder()
         path='/api/upload?'+urlencode({'folder':folder,'name':'Bad.wav','layout':'single'})
         self.assertEqual(self.request(path,raw=self.wav(),metadata={'artist':'x','bad':'value'})[0],400)
@@ -227,7 +212,6 @@ class Integration(unittest.TestCase):
 
 
     def test_artist_release_browsing_covers_full_library(self):
-        self.login()
         folder = self.folder()
         self.scan_wait()
         with self.app.lock:
@@ -260,8 +244,8 @@ class Integration(unittest.TestCase):
     def test_healthcheck_is_public_and_contains_no_settings(self):
         code,health = self.request('/api/health')
         self.assertEqual(code,200)
-        self.assertEqual(health,{'status':'ok','version':'1.2'})
-        self.assertEqual(self.request('/api/state')[0],401)
+        self.assertEqual(health,{'status':'ok','version':'1.3'})
+        self.assertEqual(self.request('/api/state')[0],200)
 
     def test_container_data_environment_and_sigterm_shutdown(self):
         import os
@@ -286,12 +270,17 @@ class Integration(unittest.TestCase):
                 proc.communicate()
 
 
-    def test_logout_revokes_session(self):
-        self.login()
-        old = self.cookie
-        self.assertEqual(self.request('/api/logout', {})[0], 200)
-        self.cookie = old
-        self.assertEqual(self.request('/api/state')[0], 401)
+    def test_legacy_password_removed_without_losing_settings(self):
+        data=self.root/'legacy'
+        data.mkdir()
+        folder={'id':'original','name':'Original folder','type':'music','path':str(self.dest)}
+        (data/'config.json').write_text(json.dumps({'password':'old-password','folders':[folder]}))
+        app=App(data,worker=False)
+        self.assertNotIn('password',app.config)
+        self.assertNotIn('password',json.loads((data/'config.json').read_text()))
+        self.assertEqual(app.config['folders'],[folder])
+        self.assertEqual(self.request('/api/login',{'password':'anything'})[0],404)
+        self.assertEqual(self.request('/api/logout',{})[0],404)
 
 
 if __name__ == '__main__':

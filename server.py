@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """MediaDrop: a private LAN music inbox. Python 3.10+, FFmpeg, no pip packages."""
 import argparse
-import hmac
 import json
 import os
 from pathlib import Path
 import queue
 import re
 import hashlib
-import secrets
 import signal
 import shutil
 import socket
@@ -17,7 +15,6 @@ import tempfile
 import threading
 import time
 import uuid
-from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit, parse_qs, unquote
 from artwork import Artwork, validate_settings
@@ -199,14 +196,13 @@ class App:
         self.scan_state = {'running': False, 'scanned': 0, 'errors': 0}
         self.library = json.loads((self.data / 'library.json').read_text()) if (self.data / 'library.json').exists() else {}
         self.upload_slots = threading.BoundedSemaphore(3)
-        self.sessions = {}
-        self.attempts = {}
         self.queue = queue.Queue()
         self.stopping = threading.Event()
         self.process = None
         self.worker = None
         config_path = self.data / 'config.json'
-        self.config = json.loads(config_path.read_text()) if config_path.exists() else {'password': secrets.token_urlsafe(12), 'folders': []}
+        self.config = json.loads(config_path.read_text()) if config_path.exists() else {'folders': []}
+        self.config.pop('password', None)
         self.jobs = json.loads((self.data / 'jobs.json').read_text()) if (self.data / 'jobs.json').exists() else []
         self.artwork = Artwork(self.data, self.config.get('artwork', {'provider':'none'}))
         self.save_config()
@@ -588,7 +584,7 @@ class App:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = 'MediaDrop/1.2'
+    server_version = 'MediaDrop/1.3'
 
     @property
     def app(self):
@@ -605,40 +601,24 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
         super().end_headers()
 
-    def reply(self, status, value, cookie=None):
+    def reply(self, status, value):
         payload = json.dumps(value).encode()
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(payload)))
-        if cookie:
-            self.send_header('Set-Cookie', cookie)
         self.end_headers()
         self.wfile.write(payload)
-
-    def authenticated(self):
-        try:
-            cookie = SimpleCookie(self.headers.get('Cookie', ''))
-            token = cookie['mediadrop'].value
-        except Exception:
-            return False
-        with self.app.lock:
-            expires = self.app.sessions.get(token, 0)
-            return expires > time.time()
 
     def do_GET(self):
         route = urlsplit(self.path).path
         if route == '/api/health':
-            return self.reply(200, {'status': 'ok', 'version': '1.2'})
+            return self.reply(200, {'status': 'ok', 'version': '1.3'})
         if route == '/api/state':
-            if not self.authenticated():
-                return self.reply(401, {'error': 'Please sign in.'})
             with self.app.lock:
                 folders = [dict(f, available=Path(f['path']).is_dir()) for f in self.app.config['folders']]
                 jobs = [{k: v for k, v in j.items() if k != 'destination'} for j in self.app.jobs[-100:]]
             return self.reply(200, {'folders': folders, 'jobs': jobs, 'conversion': bool(shutil.which('ffmpeg') and shutil.which('ffprobe')), 'artwork': self.app.artwork.public()})
         if route == '/api/artwork/image':
-            if not self.authenticated():
-                return self.reply(401, {'error': 'Please sign in.'})
             try:
                 payload, mime = self.app.artwork.image(parse_qs(urlsplit(self.path).query).get('id', [''])[0])
                 self.send_response(200)
@@ -650,16 +630,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(404, {'error': str(exc)})
             return
         if route == '/api/bulk/status':
-            if not self.authenticated():
-                return self.reply(401, {'error': 'Please sign in.'})
             try:
                 plan_id = parse_qs(urlsplit(self.path).query).get('id', [''])[0]
                 return self.reply(200, self.app.bulk_status(plan_id))
             except ValueError as exc:
                 return self.reply(400, {'error': str(exc)})
         if route == '/api/library':
-            if not self.authenticated():
-                return self.reply(401, {'error': 'Please sign in.'})
             args = parse_qs(urlsplit(self.path).query)
             query = args.get('q', [''])[0].casefold()[:300]
             folder_id = args.get('folder', [''])[0]
@@ -713,8 +689,6 @@ class Handler(BaseHTTPRequestHandler):
             if self.headers.get('X-MediaDrop') != '1' or (origin and origin != 'http://' + self.headers.get('Host', '')):
                 return self.reply(403, {'error': 'Request blocked. Open MediaDrop directly.'})
             route = urlsplit(self.path).path
-            if route != '/api/login' and not self.authenticated():
-                return self.reply(401, {'error': 'Please sign in again.'})
             if route == '/api/upload':
                 return self.upload()
             if self.headers.get_content_type() != 'application/json':
@@ -725,14 +699,6 @@ class Handler(BaseHTTPRequestHandler):
             value = json.loads(self.rfile.read(length))
             if not isinstance(value, dict):
                 raise ValueError('Expected a settings object.')
-            if route == '/api/login':
-                return self.login(value)
-            if route == '/api/logout':
-                cookie = SimpleCookie(self.headers.get('Cookie', ''))
-                with self.app.lock:
-                    if 'mediadrop' in cookie:
-                        self.app.sessions.pop(cookie['mediadrop'].value, None)
-                return self.reply(200, {}, 'mediadrop=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0')
             if route == '/api/artwork/settings':
                 settings = validate_settings(value, self.app.config.get('artwork', {}))
                 self.app.artwork.configure(settings)
@@ -779,22 +745,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(404, {'error': 'Not found.'})
         except (ValueError, OSError, TimeoutError, subprocess.TimeoutExpired) as exc:
             self.reply(400, {'error': str(exc)})
-
-    def login(self, value):
-        now = time.time()
-        ip = self.client_address[0]
-        with self.app.lock:
-            self.app.attempts = {k: [t for t in v if t > now - 60] for k, v in self.app.attempts.items() if any(t > now - 60 for t in v)}
-            attempts = self.app.attempts.setdefault(ip, [])
-            if len(attempts) >= 10:
-                return self.reply(429, {'error': 'Too many attempts. Wait a minute.'})
-            attempts.append(now)
-            if not hmac.compare_digest(str(value.get('password', '')).encode(), self.app.config['password'].encode()):
-                return self.reply(401, {'error': 'That password is incorrect. See the MediaDrop server logs or Terminal window.'})
-            token = secrets.token_urlsafe(32)
-            self.app.sessions = {k: v for k, v in self.app.sessions.items() if v > now}
-            self.app.sessions[token] = now + 86400
-        self.reply(200, {'ok': True}, f'mediadrop={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400')
 
     def upload(self):
         if not self.app.upload_slots.acquire(blocking=False):
@@ -875,7 +825,6 @@ def main():
         print(f'  Your network: http://YOUR-MAC-IP:{args.port}')
     else:
         print(f'  Your network: http://{socket.gethostname().removesuffix(".local")}.local:{args.port}')
-    print(f'  Password:     {server.app.config["password"]}\n', flush=True)
     if os.environ.get('MEDIADROP_CONTAINER'):
         print('Running in Docker. Settings and queue are stored in /data.\nKeep this service on your trusted local network.\n', flush=True)
     else:

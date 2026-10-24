@@ -1,6 +1,6 @@
 'use strict';
 const $ = id => document.getElementById(id);
-let state = {folders: [], jobs: []}, selected = localStorage.getItem('mediadrop-folder'), pending = [], sending = false, signedIn = false;
+let state = {folders: [], jobs: []}, selected = localStorage.getItem('mediadrop-folder'), pending = [], sending = false, connected = false, connectionLost = false;
 const supported = /\.(mp3|wav|wave|flac|m4a|aac|ogg|opus|aif|aiff|wma)$/i;
 const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const size = bytes => bytes >= 1e9 ? (bytes/1e9).toFixed(1)+' GB' : bytes >= 1e6 ? (bytes/1e6).toFixed(1)+' MB' : Math.ceil(bytes/1e3)+' KB';
@@ -8,17 +8,17 @@ function banner(message) { $('banner').textContent = message; $('banner').hidden
 async function api(path, body) {
   const response = await fetch(path, body === undefined ? {} : {method:'POST',headers:{'Content-Type':'application/json','X-MediaDrop':'1'},body:JSON.stringify(body)});
   const data = await response.json();
-  if (!response.ok) { if(response.status === 401 && path !== '/api/login') showLogin(); throw new Error(data.error || 'Request failed.'); }
+  if (!response.ok) throw new Error(data.error || 'Request failed.');
   return data;
 }
-function showLogin(){ signedIn=false; $('shell').hidden=true; $('login').hidden=false; }
 async function refresh(){
   try {
-    state = await api('/api/state'); signedIn=true; $('login').hidden=true; $('shell').hidden=false;
+    state = await api('/api/state'); connected=true;
+    if(connectionLost){banner('');connectionLost=false;}
     if(!state.folders.some(f=>f.id===selected && f.available)) selected=state.folders.find(f=>f.available)?.id || null;
     renderFolders(); renderTransfers(); refreshLibrary(); updateArtworkStatus();
     if(!state.conversion) banner('FFmpeg is missing on the server. Follow the setup instructions, then restart MediaDrop.');
-  } catch(error) { if(signedIn) banner('Connection lost. Check that MediaDrop is running on the server Mac.'); }
+  } catch(error) { connected=false;connectionLost=true;banner('Connection lost. Check that MediaDrop is running on the server.'); }
 }
 function renderFolders(){
   const folders=state.folders.filter(f=>f.type==='music');
@@ -56,8 +56,6 @@ function openFolders(){ $('folderError').textContent=''; if(!$('folderDialog').o
 $('foldersButton').onclick=openFolders; $('closeDialog').onclick=()=>$('folderDialog').close();
 $('musicNav').onclick=()=>window.scrollTo({top:0,behavior:'smooth'});
 $('folderForm').onsubmit=async e=>{e.preventDefault(); const button=e.target.querySelector('button'); button.disabled=true; $('folderError').textContent=''; try{await api('/api/folders',{name:$('folderName').value,path:$('folderPath').value}); e.target.reset(); await refresh();}catch(error){$('folderError').textContent=error.message;}finally{button.disabled=false;}};
-$('loginForm').onsubmit=async e=>{e.preventDefault(); const button=e.target.querySelector('button');button.disabled=true;$('loginError').textContent='';try{await api('/api/login',{password:$('password').value});$('password').value='';await refresh();}catch(error){$('loginError').textContent=error.message;}finally{button.disabled=false;}};
-$('signOut').onclick=async()=>{if(sending || pending.some(p=>['waiting','draft'].includes(p.status))){banner('Let your uploads finish before signing out.');return;}try{await api('/api/logout',{});showLogin();}catch(e){banner(e.message);}};
 $('dropzone').onclick=()=>$('fileInput').click();
 $('fileInput').onchange=e=>{addFiles(Array.from(e.target.files));e.target.value='';};
 let dragDepth=0;
@@ -170,7 +168,7 @@ function libraryCrumbs(){
 function tileInitials(name){return name.trim().split(/\s+/).slice(0,2).map(p=>p[0]||'').join('').toUpperCase();}
 function tileColour(name){let value=0;for(const c of name)value=(value*31+c.charCodeAt(0))>>>0;return value%6;}
 async function refreshLibrary(){
-  if(!signedIn)return;const request=++libraryRequest;
+  if(!connected)return;const request=++libraryRequest;
   try{
     const result=await api('/api/library?'+new URLSearchParams({q:$('librarySearch').value,folder:$('libraryFolder').value,page:String(libraryPage),view:libraryView,artist:libraryArtist?.key||'',release:libraryRelease?.key||''}));
     if(request!==libraryRequest)return;
@@ -203,7 +201,7 @@ async function refreshLibrary(){
     container.querySelectorAll('[data-library-edit]').forEach(button=>button.onclick=()=>openMetadata(button.dataset.libraryEdit));
     $('libraryPrevious').disabled=libraryPage===0;$('libraryNext').disabled=(libraryPage+1)*libraryPageSize>=result.total;
     $('libraryPage').textContent=result.total?`PAGE ${libraryPage+1} OF ${Math.ceil(result.total/libraryPageSize)}`:'NO RESULTS';
-  }catch(e){if(signedIn)$('scanStatus').textContent=e.message;}
+  }catch(e){if(connected)$('scanStatus').textContent=e.message;}
 }
 let searchTimer;$('librarySearch').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>libraryNavigate('artists'),250);};
 $('libraryFolder').onchange=()=>libraryNavigate('artists');
@@ -302,4 +300,4 @@ $('artworkForm').onsubmit=async e=>{
   }catch(error){$('artworkError').textContent=error.message;$('saveArtwork').disabled=false;}
 };
 $('syncArtwork').onclick=async()=>{try{await api('/api/artwork/sync',{});failedImages.clear();await refresh();}catch(e){$('artworkError').textContent=e.message;}};
-refresh();setInterval(()=>{if(signedIn)refresh();},2500);
+refresh();setInterval(refresh,2500);

@@ -2,7 +2,7 @@
 
 The image includes Python and FFmpeg. There is no need to install them on the Mac. These instructions use Docker Compose v2 and Docker Desktop's Linux containers.
 
-The container runs as UID **501**, GID **20** by default, matching the ownership used in your existing Mac services. Settings, password, artwork cache, index and queued uploads live in the persistent `/data` volume. Music lives in the host directory you bind to `/music`.
+The container runs as UID **501**, GID **20** by default, matching the ownership used in your existing Mac services. Settings, artwork cache, index and queued uploads live in the persistent `/data` volume. Music lives in the host directory you bind to `/music`.
 
 ## Add MediaDrop to your existing stack
 
@@ -67,7 +67,7 @@ docker compose up -d --build mediadrop
 docker compose logs mediadrop
 ```
 
-Open **http://localhost:12345** on the Mac, or **http://YOUR-MAC-IP:12345** on another device. Use the password from `docker compose logs mediadrop`. In **Manage folders**, add **`/music`** as your music destination. The container sees `/music`; you should not enter the host's `/Users/...` or `/Volumes/...` path in that field unless you separately mounted it at that same path.
+Open **http://localhost:12345** on the Mac, or **http://YOUR-MAC-IP:12345** on another device. No password is required. In **Manage folders**, add **`/music`** as your music destination. The container sees `/music`; you should not enter the host's `/Users/...` or `/Volumes/...` path in that field unless you separately mounted it at that same path.
 
 The service now participates in your normal `docker compose up -d` commands. `restart: unless-stopped` brings an existing container back when the Docker engine restarts, unless you explicitly stopped it. Enable Docker Desktop's **Start Docker Desktop when you sign in to your computer** option if you want it started at Mac login. This is login-based; a Mac waiting at its login screen after reboot may not have Docker Desktop running yet. A healthy Docker engine and mounted music drive are still required.
 
@@ -138,9 +138,9 @@ Rebuilding/recreating the container keeps the named data volume and host music f
 
 ## Existing native installation
 
-Docker starts with its own settings volume and password. Your existing audio files and their saved metadata remain in the mounted music directory. Add `/music` and scan to populate the Docker library. Keep the old native settings folder as a backup.
+Docker starts with its own settings volume and opens directly without a password. Your existing audio files and their saved metadata remain in the mounted music directory. Add `/music` and scan to populate the Docker library. Keep the old native settings folder as a backup.
 
-This setup does not automatically import the native password, transfer queue or destination paths: those destination paths refer to the Mac filesystem and need container mount paths. Finish outstanding native uploads/conversions before switching. You can continue using the original Mac launchers if you choose to return to native mode; stop the container first so port 12345 is free.
+This setup does not automatically import the native transfer queue or destination paths: those destination paths refer to the Mac filesystem and need container mount paths. Finish outstanding native uploads/conversions before switching. You can continue using the original Mac launchers if you choose to return to native mode; stop the container first so port 12345 is free.
 
 ## Permissions and troubleshooting
 

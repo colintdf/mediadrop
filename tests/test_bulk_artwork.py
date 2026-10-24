@@ -17,14 +17,12 @@ class BulkTests(unittest.TestCase):
     setUp = test_server.Integration.setUp
     tearDown = test_server.Integration.tearDown
     request = test_server.Integration.request
-    login = test_server.Integration.login
     folder = test_server.Integration.folder
     wav = test_server.Integration.wav
     scan_wait = test_server.Integration.scan_wait
     audio_payload = test_server.Integration.audio_payload
 
     def tracks(self, album=False):
-        self.login()
         self.folder()
         paths=[]
         for i in range(2):
@@ -91,7 +89,6 @@ class BulkTests(unittest.TestCase):
         self.assertFalse((self.dest/'An artist'/'New album name').exists())
 
     def test_artwork_settings_api_keeps_credentials_off_browser(self):
-        self.login()
         self.app.artwork.load_lidarr=lambda add:add('An artist',None,'/api/v1/mediacover/artist/1/poster.jpg')
         code,result=self.request('/api/artwork/settings',{'provider':'lidarr','url':'http://127.0.0.1:8686','credential':'private-api-key'})
         self.assertEqual(code,200,result)
@@ -105,8 +102,7 @@ class BulkTests(unittest.TestCase):
         code,_=self.request('/api/artwork/settings',{'provider':'lidarr','url':'http://127.0.0.1:8686','credential':''})
         self.assertEqual(code,200)
         self.assertEqual(self.app.config['artwork']['credential'],'private-api-key')
-        self.cookie=''
-        self.assertEqual(self.request('/api/artwork/image?id='+'a'*64)[0],401)
+        self.assertEqual(self.request('/api/artwork/image?id='+'a'*64)[0],404)
 
 
     def test_bulk_conflict_validates_every_file_before_writing(self):

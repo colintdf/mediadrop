@@ -1,4 +1,4 @@
-# MediaDrop 1.2
+# MediaDrop 1.3
 
 A private music inbox for your media centre Mac, with a responsive web interface on port **12345**. Upload from a browser on the Mac or another device on the same home network.
 
@@ -11,7 +11,7 @@ To run MediaDrop with your other containers, follow the [Docker setup guide](doc
 1. Unzip this folder somewhere permanent on the media centre Mac, such as `~/Applications/MediaDrop`.
 2. Install [Homebrew](https://brew.sh) if it is not installed. Double-click **Setup.command** to install Python and FFmpeg. If these are already installed, skip setup. Requires Python 3.10 or later.
 3. Double-click **Start.command**. Leave its Terminal window open. The browser opens at **http://localhost:12345**. If macOS asks whether Python may accept incoming connections, allow it for access from other devices.
-4. Copy the password from that Terminal window into the sign-in screen.
+4. The library opens directly; no password is required.
 5. Click **Manage folders**. Add a display name and an existing folder's full path **on the server Mac**, for example `/Volumes/Media/Music`. In Finder, select a folder and press **Option + Command + C** to copy its path. Grant Terminal access to removable volumes if macOS asks.
 6. Choose a destination and drop music files onto the upload area, or click to browse. Multiple files are supported. Tracks are staged first: click **Edit details** to enter tags and choose their folder layout, then click **Upload staged tracks**.
 
@@ -93,9 +93,9 @@ Tokens/API keys stay in MediaDrop's private server configuration and are sent on
 
 Official references: [Plex server API](https://developer.plex.tv/pms/), [finding your Plex token](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/), and [Lidarr API](https://lidarr.audio/docs/api/).
 
-## Updating from 1.0 or 1.1
+## Updating from an earlier version
 
-Stop MediaDrop with **Control + C** in its Terminal window. Unzip the updated folder, replace the previous application folder, and run **Start.command**. Your password, destinations and upload history are kept separately and remain available. No need to run Setup again if Python and FFmpeg are installed. Refresh your browser after restarting. Existing completed uploads can be edited, and the new library scan picks up music already in your configured folders.
+Stop MediaDrop with **Control + C** in its Terminal window. Unzip the updated folder, replace the previous application folder, and run **Start.command**. Your destinations and upload history are kept separately and remain available. No need to run Setup again if Python and FFmpeg are installed. Refresh your browser after restarting. Older saved password fields are removed automatically; the new version opens directly into the library. Existing completed uploads can be edited, and the new library scan picks up music already in your configured folders.
 
 ## Everyday use
 
@@ -103,7 +103,7 @@ The destination is captured when files enter the browser queue. Changing the sel
 
 Keep external media drives mounted. Missing destination folders are never automatically recreated on the startup disk. Create folders in Finder first. To change a destination's name or path, remove its setting and add it again.
 
-The password is generated at first start and stays the same between restarts. Sessions last 24 hours. Settings, password and job history are stored privately at:
+Settings and job history are stored privately at:
 
 ```
 ~/Library/Application Support/MediaDrop/
@@ -115,7 +115,7 @@ To stop: press **Control + C** in the Terminal window. To start: double-click **
 
 ## Local network access
 
-MediaDrop listens on all network interfaces by default, with a password, session cookies, origin checks and login rate limiting. It is intended for your trusted home network. It serves HTTP, not HTTPS: do not forward port 12345 on your router or expose it directly to the internet. Anyone signed in can manage destination folders on the server Mac.
+MediaDrop opens without a password and listens on all network interfaces by default. Browser-origin and custom-header checks remain on write requests. It is intended for your trusted home network. It serves HTTP, not HTTPS: do not forward port 12345 on your router or expose it directly to the internet. Devices that can reach the service can manage tracks and destinations.
 
 For access on the Mac only:
 
@@ -138,7 +138,6 @@ Only one instance may use a settings directory. If another program already uses 
 - **Permission denied:** give Terminal access to that location in macOS Privacy & Security settings. Folders and drives must be writable by the user running MediaDrop.
 - **Conversion failed:** the queue displays the problem. Check the source plays normally and that the destination drive has space. Re-upload after fixing it.
 - **No FFmpeg:** run Setup.command again. Launchers search both Apple Silicon and Intel Homebrew locations.
-- **Forgotten password:** it is printed every time Start.command runs. To replace it, stop the server, edit the `password` value in `config.json`, then restart. This also invalidates browser sessions.
 
 ## Next phase: CD ripping client
 
@@ -150,4 +149,4 @@ Planned separately after this server: a companion Mac client that reads audio CD
 python3 -m unittest discover -s tests -v
 ```
 
-Integration checks exercise 320 kbps WAV-to-MP3 conversion, pre-upload tags, byte-for-byte MP3 copying, audio-preserving metadata edits and moves, album/single layouts, existing-file indexing and search, deleted-file rescans, conflict protection, duplicate handling, authentication, destination validation, symlink rejection and interrupted-job recovery. FFmpeg and FFprobe must be on PATH. Additional checks cover safe bulk edits, single/album-name protection, preflight conflicts, artist/release pagination, and read-only Plex/Lidarr artwork lookups against simulated provider responses. Live access to your own Plex/Lidarr instance still needs to be checked after configuration.
+Integration checks exercise 320 kbps WAV-to-MP3 conversion, pre-upload tags, byte-for-byte MP3 copying, audio-preserving metadata edits and moves, album/single layouts, existing-file indexing and search, deleted-file rescans, conflict protection, duplicate handling, password-free access, origin checks, destination validation, symlink rejection and interrupted-job recovery. FFmpeg and FFprobe must be on PATH. Additional checks cover safe bulk edits, single/album-name protection, preflight conflicts, artist/release pagination, and read-only Plex/Lidarr artwork lookups against simulated provider responses. Live access to your own Plex/Lidarr instance still needs to be checked after configuration.
