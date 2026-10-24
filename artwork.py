@@ -8,6 +8,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from artists import split_artists
 
 
 def normalise(value):
@@ -93,7 +94,7 @@ class Artwork:
         if not path.startswith('/') or path.startswith('//') or '\\' in path or urllib.parse.urlsplit(path).scheme:
             raise ValueError('Invalid artwork server path.')
         settings = self.settings
-        headers = {'Accept': 'application/json', 'User-Agent': 'MediaDrop/1.3'}
+        headers = {'Accept': 'application/json', 'User-Agent': 'MediaDrop/1.4'}
         headers['X-Plex-Token' if settings['provider'] == 'plex' else 'X-Api-Key'] = settings['credential']
         request = urllib.request.Request(settings['url'] + path, headers=headers)
         try:
@@ -217,6 +218,9 @@ class Artwork:
     def url_for(self, artist, release=None):
         with self.lock:
             key = self.matches.get(identity(artist, release))
+            names = split_artists(artist)
+            if not key and len(names) > 1:
+                key = self.matches.get(identity(names[0], release))
             return '/api/artwork/image?id=' + key if key else None
 
     def image(self, image_id):

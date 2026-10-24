@@ -93,7 +93,7 @@ async function pump(){
 window.addEventListener('beforeunload',e=>{if(sending || pending.some(p=>['waiting','draft'].includes(p.status))){e.preventDefault();e.returnValue='';}});
 
 
-const fields=[['title','Title'],['artist','Artist'],['album','Album / release'],['album_artist','Album artist'],['track','Track number'],['disc','Disc number'],['date','Year / date'],['genre','Genre']];
+const fields=[['title','Title'],['artist','Track artists (separate with ;)'],['album','Album / release'],['album_artist','Album artist'],['track','Track number'],['disc','Disc number'],['date','Year / date'],['genre','Genre']];
 let editing=null,libraryPage=0,libraryTotal=0,libraryTracks=[],libraryRequest=0,libraryView='artists',libraryArtist=null,libraryRelease=null,libraryPageSize=24;
 $('metadataFields').innerHTML=fields.map(([key,label])=>`<div><label for="tag-${key}">${label}</label><input id="tag-${key}" name="${key}" maxlength="300" placeholder="${['track','disc'].includes(key)?'e.g. 1 or 1/12':key==='date'?'e.g. 2026':''}"></div>`).join('');
 $('metadataFields').querySelectorAll('input').forEach(input=>input.oninput=()=>{if(editing)editing.changed.add(input.name);previewPath();});
@@ -102,12 +102,23 @@ $('closeMetadata').onclick=()=>{if(!$('saveMetadata').disabled){$('metadataDialo
 $('metadataDialog').addEventListener('cancel',e=>{if($('saveMetadata').disabled)e.preventDefault();else editing=null;});
 function editorValues(){return Object.fromEntries(fields.map(([k])=>[k,$('tag-'+k).value.trim()]));}
 function pathPart(text){return text.replace(/[\\/:*?"<>|\x00-\x1f]/g,'_').replace(/^[ .]+|[ .]+$/g,'');}
+function artistNames(value){
+  const names=[],seen=new Set();
+  for(const part of String(value||'').split(';')){const name=part.trim(),key=name.toLowerCase();if(name&&!seen.has(key)){names.push(name);seen.add(key);}}
+  return names;
+}
+function primaryArtist(tags){return artistNames(tags.album_artist)[0]||artistNames(tags.artist)[0]||'';}
+function displayCredits(value){return artistNames(value).join(' · ');}
+function trackCredits(track){
+  if(track.credits?.length)return track.credits.map(artist=>`<button type="button" class="credit-link" data-credit-name="${escapeHTML(artist.name)}" data-credit-key="${escapeHTML(artist.key)}">${escapeHTML(artist.name)}</button>`).join('<span class="credit-separator"> · </span>');
+  return escapeHTML(displayCredits(track.metadata.artist)||libraryArtist?.name||'Unknown artist');
+}
 function previewPath(){
   if(!editing)return;
   const tags=editorValues(),layout=$('trackLayout').value,folder=state.folders.find(f=>f.id===$('trackFolder').value);
   if(layout==='keep'){$('trackPath').textContent=editing.path||'';return;}
   let parts=[folder?.path||'Choose a music folder'];
-  if(layout==='single'||layout==='album')parts.push(pathPart(tags.album_artist||tags.artist)||'[Artist]');
+  if(layout==='single'||layout==='album')parts.push(pathPart(primaryArtist(tags))||'[Artist]');
   if(layout==='album')parts.push(pathPart(tags.album)||'[Album]');
   parts.push(editing.draft?editing.name.replace(/\.[^.]+$/,'.mp3'):editing.path.split('/').pop());
   $('trackPath').textContent=parts.join('/');
@@ -127,7 +138,7 @@ async function openMetadata(id,draft=false){
     $('trackLayout').querySelector('[value="keep"]').disabled=draft;
     $('trackLayout').value=draft?(track.layout||'flat'):'keep';
     $('sharedFieldsLabel').hidden=!draft;
-    $('metadataHint').textContent=draft?'Only fields you change replace existing tags. Leave other fields untouched to preserve them. Singles sit in the artist folder; albums get their own folder.':'Current tags are read from the audio file. Clearing a field removes that tag. Choose a destination to move the track without re-encoding.';
+    $('metadataHint').textContent=draft?'Separate track performers with semicolons; Album artist keeps a release together. Only fields you change replace existing tags. Leave other fields untouched to preserve them. Singles sit in the artist folder; albums get their own folder.':'Current tags are read from the audio file. Clearing a field removes that tag. Choose a destination to move the track without re-encoding.';
     $('saveMetadata').textContent=draft?'Save details before upload':'Save tags and location';
     previewPath();$('metadataDialog').showModal();
   }catch(e){banner(e.message);}
@@ -137,7 +148,7 @@ $('metadataForm').onsubmit=async e=>{
   const button=$('saveMetadata');button.disabled=true;$('metadataError').textContent='';
   try{
     const values=editorValues(),layout=$('trackLayout').value,folder=$('trackFolder').value;
-    if(['single','album'].includes(layout)&&!(values.album_artist||values.artist))throw new Error('Enter an artist or album artist for the folder name.');
+    if(['single','album'].includes(layout)&&!primaryArtist(values))throw new Error('Enter an artist or album artist for the folder name.');
     if(layout==='album'&&!values.album)throw new Error('Enter the album name for its folder.');
     const changes=Object.fromEntries([...editing.changed].map(k=>[k,values[k]]));
     if(editing.draft){
@@ -182,9 +193,9 @@ async function refreshLibrary(){
     if(libraryView==='artists'){
       html=result.items.map((artist,index)=>`<button class="library-tile artist-tile" data-tile="${index}"><span class="tile-art tile-colour-${tileColour(artist.name)}">${tilePhoto(artist.image)}<span class="artist-monogram" aria-hidden="true">${escapeHTML(tileInitials(artist.name))}</span><span class="tile-open" aria-hidden="true">↗</span></span><strong>${escapeHTML(artist.name)}</strong><small>${artist.release_count} ${artist.release_count===1?'release':'releases'} · ${artist.track_count} ${artist.track_count===1?'track':'tracks'}</small></button>`).join('');
     }else if(libraryView==='releases'){
-      html=result.items.map((release,index)=>`<article class="release-card"><label class="tile-select"><input type="checkbox" data-select-release="${index}" ${selectedReleaseKeys.has(release.key)?'checked':''} aria-label="Select ${escapeHTML(release.name)}"><span>Select release</span></label><button class="library-tile release-tile" data-tile="${index}"><span class="tile-art tile-colour-${tileColour(release.name)}">${tilePhoto(release.image)}<span class="release-record" aria-hidden="true"><i></i></span><span class="release-type">${release.kind==='album'?'ALBUM':'SINGLE'}</span><span class="tile-open" aria-hidden="true">↗</span></span><strong>${escapeHTML(release.name)}</strong><small>${escapeHTML(release.year?release.year+' · ':'')}${release.track_count} ${release.track_count===1?'track':'tracks'}</small></button></article>`).join('');
+      html=result.items.map((release,index)=>`<article class="release-card"><label class="tile-select"><input type="checkbox" data-select-release="${index}" ${selectedReleaseKeys.has(release.key)?'checked':''} aria-label="Select ${escapeHTML(release.name)}"><span>Select release</span></label><button class="library-tile release-tile" data-tile="${index}"><span class="tile-art tile-colour-${tileColour(release.name)}">${tilePhoto(release.image)}<span class="release-record" aria-hidden="true"><i></i></span><span class="release-type">${release.appears_on?'APPEARS ON':release.kind==='album'?'ALBUM':'SINGLE'}</span><span class="tile-open" aria-hidden="true">↗</span></span><strong>${escapeHTML(release.name)}</strong><small>${escapeHTML(release.appears_on?release.artist+' · ':'')}${escapeHTML(release.year?release.year+' · ':'')}${release.track_count} ${release.track_count===1?'track':'tracks'}</small></button></article>`).join('');
     }else{
-      html=result.items.map(t=>`<div class="transfer"><input class="track-select" type="checkbox" data-select-track="${escapeHTML(t.id)}" ${selectedTrackIds.has(t.id)?'checked':''} aria-label="Select ${escapeHTML(t.metadata.title||t.name)}"><span class="track-icon track-number">${escapeHTML(t.metadata.track?.split('/')[0]||'♫')}</span><div class="track-main"><strong>${escapeHTML(t.metadata.title||t.name)}</strong><small>${escapeHTML(t.metadata.artist||libraryArtist?.name||'Unknown artist')}</small><small>${escapeHTML(t.folder+' / '+t.relative)}</small></div><div class="track-buttons"><button class="edit-track" data-library-edit="${escapeHTML(t.id)}">Edit details</button></div></div>`).join('');
+      html=result.items.map(t=>`<div class="transfer"><input class="track-select" type="checkbox" data-select-track="${escapeHTML(t.id)}" ${selectedTrackIds.has(t.id)?'checked':''} aria-label="Select ${escapeHTML(t.metadata.title||t.name)}"><span class="track-icon track-number">${escapeHTML(t.metadata.track?.split('/')[0]||'♫')}</span><div class="track-main"><strong>${escapeHTML(t.metadata.title||t.name)}</strong><small>${trackCredits(t)}</small><small>${escapeHTML(t.folder+' / '+t.relative)}</small></div><div class="track-buttons"><button class="edit-track" data-library-edit="${escapeHTML(t.id)}">Edit details</button></div></div>`).join('');
     }
     // Polling leaves focused tiles intact while the current view is unchanged.
     const markup=html||'<div class="empty library-empty">Nothing here yet.<small>Scan your music folders or try another search.</small></div>';
@@ -198,6 +209,7 @@ async function refreshLibrary(){
     container.querySelectorAll('[data-select-track]').forEach(input=>input.onchange=()=>{if(input.checked)selectedTrackIds.add(input.dataset.selectTrack);else selectedTrackIds.delete(input.dataset.selectTrack);updateBulkToolbar();});
     container.querySelectorAll('.tile-photo').forEach(img=>img.onerror=()=>{failedImages.add(img.getAttribute('src'));img.remove();});
     updateBulkToolbar();
+    container.querySelectorAll('[data-credit-key]').forEach(button=>button.onclick=()=>libraryNavigate('releases',{key:button.dataset.creditKey,name:button.dataset.creditName}));
     container.querySelectorAll('[data-library-edit]').forEach(button=>button.onclick=()=>openMetadata(button.dataset.libraryEdit));
     $('libraryPrevious').disabled=libraryPage===0;$('libraryNext').disabled=(libraryPage+1)*libraryPageSize>=result.total;
     $('libraryPage').textContent=result.total?`PAGE ${libraryPage+1} OF ${Math.ceil(result.total/libraryPageSize)}`:'NO RESULTS';
@@ -236,7 +248,7 @@ async function openBulk(scope){
   try{
     bulkPlan=await api('/api/bulk/prepare',scope);bulkRunning=false;
     $('bulkSummary').textContent=`Edit shared details for ${bulkPlan.count} tracks.`;
-    const labels={artist:'Artist',album_artist:'Album artist',album:'Album name',genre:'Genre',date:'Year / date'};
+    const labels={artist:'Track artist credits',album_artist:'Album artist',album:'Album name',genre:'Genre',date:'Year / date'};
     $('bulkFields').innerHTML=Object.keys(labels).map(key=>{
       const allowed=bulkPlan.allowed.includes(key),value=bulkPlan.common[key];
       return `<div class="bulk-field ${allowed?'':'bulk-field-disabled'}"><label class="bulk-field-label"><input type="checkbox" data-bulk-key="${key}" ${allowed?'':'disabled'}> ${labels[key]}</label><input id="bulk-${key}" maxlength="300" value="${escapeHTML(value??'')}" placeholder="${value===null?'Mixed values: unchanged unless checked':'Check the field to change or clear it'}" aria-label="${labels[key]} value" disabled></div>`;

@@ -18,6 +18,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit, parse_qs, unquote
 from artwork import Artwork, validate_settings
+from artists import primary_artist, credited_artists, split_artists
 
 AUDIO = {'.mp3', '.wav', '.wave', '.flac', '.m4a', '.aac', '.ogg', '.opus', '.aif', '.aiff', '.wma'}
 ROOT = Path(__file__).resolve().parent
@@ -101,7 +102,7 @@ def organised_folder(root, tags, layout):
         return root
     if layout not in ('album', 'single'):
         raise ValueError('Choose original folder, album or single.')
-    artist = tags.get('album_artist') or tags.get('artist')
+    artist = primary_artist(tags)
     release = tags.get('album')
     if not artist or (layout == 'album' and not release):
         raise ValueError('Enter an artist, and an album name for an album track, to organise this track.')
@@ -118,35 +119,57 @@ def organised_folder(root, tags, layout):
 def library_identity(track):
     tags = track['metadata']
     parts = Path(track['relative']).parts
-    artist = (tags.get('album_artist') or tags.get('artist') or (parts[0] if len(parts) >= 2 else '')).strip() or 'Unknown artist'
+    artist = primary_artist(tags, parts[0] if len(parts) >= 2 else '') or 'Unknown artist'
     kind = track.get('layout', 'single')
     release = (tags.get('album') or (parts[1] if kind == 'album' and len(parts) >= 3 else '') or tags.get('title') or Path(track['name']).stem).strip()
     return artist, artist.casefold(), release, kind + ':' + release.casefold()
 
 
-def browse_library(items, view, artist_key='', release_key=''):
+def library_credits(track):
+    parts = Path(track['relative']).parts
+    names = credited_artists(track['metadata'], parts[0] if len(parts) >= 2 else '')
+    return [{'name': name, 'key': name.casefold()} for name in names]
+
+
+def credited_to(track, artist_key):
+    return any(artist['key'] == artist_key for artist in library_credits(track))
+
+
+def release_key(track, artist_key):
+    _, primary, _, release_id = library_identity(track)
+    if primary == artist_key:
+        return release_id
+    # A guest can appear on two different artists' albums with the same title.
+    return 'appearance:' + hashlib.sha256((primary + '\0' + release_id).encode()).hexdigest()
+
+
+def browse_library(items, view, artist_key='', release_id=''):
     if view == 'artists':
         groups = {}
         for track in items:
-            artist, key, release, release_id = library_identity(track)
-            group = groups.setdefault(key, {'key': key, 'name': artist, 'track_count': 0, '_releases': set()})
-            group['track_count'] += 1
-            group['_releases'].add(release_id)
+            _, primary, _, release = library_identity(track)
+            for artist in library_credits(track):
+                group = groups.setdefault(artist['key'], {'key': artist['key'], 'name': artist['name'], 'track_count': 0, '_releases': set()})
+                group['track_count'] += 1
+                group['_releases'].add((primary, release))
         result = []
         for group in groups.values():
             group['release_count'] = len(group.pop('_releases'))
             result.append(group)
         return sorted(result, key=lambda g: g['name'].casefold())
-    selected = [t for t in items if library_identity(t)[1] == artist_key]
+    selected = [t for t in items if credited_to(t, artist_key)]
     if view == 'releases':
         groups = {}
         for track in selected:
-            artist, key, release, release_id = library_identity(track)
-            group = groups.setdefault(release_id, {'key': release_id, 'name': release, 'artist': artist, 'kind': track['layout'], 'track_count': 0, 'year': track['metadata'].get('date', '')[:4]})
+            artist, primary, release, _ = library_identity(track)
+            key = release_key(track, artist_key)
+            group = groups.setdefault(key, {'key': key, 'name': release, 'artist': artist, 'kind': track['layout'],
+                                           'appears_on': primary != artist_key, 'track_count': 0,
+                                           'year': track['metadata'].get('date', '')[:4]})
             group['track_count'] += 1
-        return sorted(groups.values(), key=lambda g: (g['kind'] != 'album', g['name'].casefold()))
-    if release_key:
-        selected = [t for t in selected if library_identity(t)[3] == release_key]
+        return sorted(groups.values(), key=lambda g: (g['appears_on'], g['kind'] != 'album', g['name'].casefold(), g['artist'].casefold()))
+    if release_id:
+        selected = [t for t in selected if release_key(t, artist_key) == release_id]
     def number(text):
         try:
             return int((text or '0').split('/')[0])
@@ -406,8 +429,8 @@ class App:
                 active = {f['id'] for f in self.config['folders'] if f['type'] == 'music'}
                 ids = [t['id'] for t in self.library.values() if t['folder_id'] in active
                        and (not folder or t['folder_id'] == folder)
-                       and library_identity(t)[1] == artist
-                       and (releases is None or library_identity(t)[3] in releases)
+                       and credited_to(t, artist)
+                       and (releases is None or release_key(t, artist) in releases)
                        and (not query or query in (' '.join(t['metadata'].values()) + ' ' + t['relative']).casefold())]
             if not isinstance(ids, list) or not 1 <= len(ids) <= 200 or any(not isinstance(i, str) or not i.startswith('lib_') for i in ids):
                 raise ValueError('Choose between 1 and 200 library tracks per batch.')
@@ -584,7 +607,7 @@ class App:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = 'MediaDrop/1.3'
+    server_version = 'MediaDrop/1.4'
 
     @property
     def app(self):
@@ -612,7 +635,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         route = urlsplit(self.path).path
         if route == '/api/health':
-            return self.reply(200, {'status': 'ok', 'version': '1.3'})
+            return self.reply(200, {'status': 'ok', 'version': '1.4'})
         if route == '/api/state':
             with self.app.lock:
                 folders = [dict(f, available=Path(f['path']).is_dir()) for f in self.app.config['folders']]
@@ -651,6 +674,8 @@ class Handler(BaseHTTPRequestHandler):
                 items = [v for v in items if query in (' '.join(v['metadata'].values()) + ' ' + v['relative']).casefold()]
             for item in items:
                 item['folder'] = folder_map[item['folder_id']]['name']
+                names = split_artists(item['metadata'].get('artist'))
+                item['credits'] = [{'name':name,'key':name.casefold()} for name in names] if names else library_credits(item)
             view = args.get('view', [''])[0]
             if view:
                 if view not in ('artists', 'releases', 'tracks'):
@@ -761,7 +786,7 @@ class Handler(BaseHTTPRequestHandler):
             if layout not in ('flat', 'album', 'single'):
                 raise ValueError('Invalid folder layout.')
             if layout != 'flat':
-                artist = metadata.get('album_artist') or metadata.get('artist')
+                artist = primary_artist(metadata)
                 release = metadata.get('album')
                 if not artist or (layout == 'album' and not release):
                     raise ValueError('Enter artist and release details before uploading into album or single folders.')

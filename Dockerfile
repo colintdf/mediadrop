@@ -17,7 +17,7 @@ RUN apt-get update \
     && chown "${PUID}:${PGID}" /app /data /music
 
 WORKDIR /app
-COPY --chown=${PUID}:${PGID} server.py artwork.py ./
+COPY --chown=${PUID}:${PGID} server.py artwork.py artists.py ./
 COPY --chown=${PUID}:${PGID} web ./web
 
 USER ${PUID}:${PGID}

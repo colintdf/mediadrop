@@ -224,8 +224,10 @@ class Integration(unittest.TestCase):
                 'relative':'Artist/Single.mp3','layout':'single',
                 'metadata':{'artist':'An artist','title':'A single'}}
         _, artists = self.request('/api/library?view=artists')
-        self.assertEqual(artists['total'], 1)
-        artist = artists['items'][0]
+        self.assertEqual(artists['total'], 2)
+        artist = next(a for a in artists['items'] if a['name']=='An artist')
+        guest = next(a for a in artists['items'] if a['name']=='Guest singer')
+        self.assertEqual(guest['track_count'],60)
         self.assertEqual(artist['track_count'],61)
         self.assertEqual(artist['release_count'],2)
         _, releases = self.request('/api/library?'+urlencode({'view':'releases','artist':artist['key']}))
@@ -241,10 +243,32 @@ class Integration(unittest.TestCase):
         self.assertEqual(self.request('/api/library?view=invalid')[0],400)
 
 
+    def test_multi_artist_upload_preserves_tags_and_uses_primary_folder(self):
+        folder=self.folder()
+        tags={'title':'Hollywood','artist':'Gorillaz;Snoop Dogg;Jamie Principle','album':'The Now Now'}
+        code,result=self.request('/api/upload?'+urlencode({'folder':folder,'name':'Hollywood.wav','layout':'album'}),raw=self.wav(),metadata=tags)
+        self.assertEqual(code,202,result)
+        self.app.queue.join()
+        output=self.dest/'Gorillaz'/'The Now Now'/'Hollywood.mp3'
+        self.assertTrue(output.is_file(),self.app.jobs[-1])
+        self.assertEqual(read_tags(output)['artist'],tags['artist'])
+        _,artists=self.request('/api/library?view=artists')
+        self.assertEqual({a['name'] for a in artists['items']},{'Gorillaz','Snoop Dogg','Jamie Principle'})
+        _,releases=self.request('/api/library?'+urlencode({'view':'releases','artist':'snoop dogg'}))
+        release=releases['items'][0]
+        self.assertTrue(release['appears_on'])
+        self.assertEqual(release['artist'],'Gorillaz')
+        _,tracks=self.request('/api/library?'+urlencode({'view':'tracks','artist':'snoop dogg','release':release['key']}))
+        self.assertEqual(tracks['total'],1)
+        self.assertEqual([c['name'] for c in tracks['items'][0]['credits']],['Gorillaz','Snoop Dogg','Jamie Principle'])
+        _,plan=self.request('/api/bulk/prepare',{'artist':'snoop dogg','releases':[release['key']]})
+        self.assertEqual(plan['count'],1)
+
+
     def test_healthcheck_is_public_and_contains_no_settings(self):
         code,health = self.request('/api/health')
         self.assertEqual(code,200)
-        self.assertEqual(health,{'status':'ok','version':'1.3'})
+        self.assertEqual(health,{'status':'ok','version':'1.4'})
         self.assertEqual(self.request('/api/state')[0],200)
 
     def test_container_data_environment_and_sigterm_shutdown(self):

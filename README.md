@@ -1,4 +1,4 @@
-# MediaDrop 1.3
+# MediaDrop 1.4
 
 A private music inbox for your media centre Mac, with a responsive web interface on port **12345**. Upload from a browser on the Mac or another device on the same home network.
 
@@ -50,19 +50,39 @@ Choose where a track belongs, with a destination path preview:
 - **Album:** `Music/Artist/Album/track.mp3`
 - **Directly in selected music folder:** keep the original upload behaviour.
 
-There are no extra `Albums` or `Singles` folders. Album artist is used for the artist folder when supplied, otherwise artist is used. Singles have no release subfolder, even if they have an album tag. Album tracks require an album name. Filename characters unsuitable for folders are replaced with underscores. Existing names receive a number rather than being overwritten. Files retain their original filenames, with an MP3 extension for converted uploads.
+There are no extra `Albums` or `Singles` folders. The first album artist is used for the artist folder when supplied, otherwise the first track artist is used. A semicolon-separated artist list never becomes one combined folder name for newly organised tracks. Singles have no release subfolder, even if they have an album tag. Album tracks require an album name. Filename characters unsuitable for folders are replaced with underscores. Existing names receive a number rather than being overwritten. Files retain their original filenames, with an MP3 extension for converted uploads.
 
 After uploading, use **Edit details** on the completed transfer or in **Your music library**. The editor reads the current tags from the actual file. Save tags in place or select a music destination and Single/Album layout to move the track. Clearing a field removes that tag. A file changed by another application while the editor was open must be reopened before saving. Existing files are never automatically reorganised by a scan or a tag change; choose a layout to move them.
 
 ## Your existing music library
 
-**Your music library** scans every configured music destination recursively, including audio that was already there before MediaDrop. Start with a grid of artist tiles. Open an artist to see their albums and singles, then open a release for its track list and metadata editor. Artist grouping prefers album artist, then artist, then the artist folder name when tags are missing. Breadcrumbs return to the artist or the full library. Search across tags and filenames, or filter by destination. There are 24 artist/release tiles or 50 tracks per page, with counts computed from the full matching library. Track lists are ordered by disc and track number. Scans read metadata; they do not convert or move existing files.
+**Your music library** scans every configured music destination recursively, including audio that was already there before MediaDrop. Start with a grid of artist tiles. Open an artist to see their albums and singles, then open a release for its track list and metadata editor. Album Artist anchors the release; if it is blank, the first track artist is used, then the artist folder name if tags are missing. Semicolon-separated performers get individual artist tiles, with guest appearances marked separately. Breadcrumbs return to the artist or the full library. Search across tags and filenames, or filter by destination. There are 24 artist/release tiles or 50 tracks per page, with counts computed from the full matching library. Track lists are ordered by disc and track number. Scans read metadata; they do not convert or move existing files.
 
 A scan runs at server startup and after adding a destination. Use **Scan folders** after adding, removing or changing files outside MediaDrop. The index caches unchanged files so repeat scans are quicker. New uploads and edits through MediaDrop update the index immediately. Large first scans can take time; the progress count is shown in the interface. Keep your media drives mounted. Hidden files and symbolic links are skipped. Removing a destination hides its indexed tracks without deleting the actual music.
 
 Under the standard music-root layout, files directly in an artist folder are listed as singles and files inside its album subfolders are listed as album tracks. This display classification is based on the path; the actual tags remain editable.
 
 Existing supported audio formats are indexed. Metadata editing uses FFmpeg stream copy to preserve the existing audio format and quality. Some formats cannot represent every tag: if a requested tag cannot be stored, MediaDrop rejects the change and retains the original file. MP3 has full support for the fields in this editor. Other tags and artwork are retained where FFmpeg supports them; unusual vendor-specific metadata may not survive a rewrite. Converted uploads still omit embedded artwork in this version.
+
+## Multiple artists and guest appearances
+
+Separate explicit artist credits with semicolons, for example:
+
+```
+Gorillaz;Snoop Dogg;Jamie Principle
+```
+
+This is interpreted as three performers. Their original tag text is preserved; the browser displays separate clickable credits. Leading/trailing whitespace, duplicate names and empty entries are ignored for browsing. Commas, ampersands, slashes and `feat.` text are not guessed as separators, so names such as `Earth, Wind & Fire`, `Simon & Garfunkel` and `AC/DC` stay intact.
+
+Set **Album artist** to `Gorillaz` to keep the album together, even when different tracks have different guests. If Album artist is empty, the first listed performer is the primary artist. For compilations, explicitly set Album artist to `Various Artists` if that is how you want the release grouped.
+
+- The primary artist's release contains all tracks credited to them or to their album-artist role.
+- Guest artist tiles show the release as **Appears on**, including only the tracks on which that guest is credited.
+- Album artwork for an appearance is matched against the release's primary artist, not the guest's name.
+- Two appearances on different artists' albums with the same title stay distinct.
+- Newly organised uploads and explicit moves use `Primary Artist/Album/track.mp3`, or `Primary Artist/track.mp3` for a single.
+
+Existing tags and files are not rewritten or moved by scanning or browsing. The updated grouping takes effect after restarting the app and refreshing the browser; you do not need to re-upload your music. Artist-wide bulk edits include guest appearances shown for that artist. Changing the track-artist field explicitly replaces its complete semicolon-separated credit list, while unchecked fields remain untouched.
 
 ## Bulk metadata editing
 
