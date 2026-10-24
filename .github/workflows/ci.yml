@@ -1,0 +1,44 @@
+name: Tests and Docker
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Prepare music bind mount
+        run: |
+          mkdir -p "$RUNNER_TEMP/mediadrop-music"
+          chmod 0777 "$RUNNER_TEMP/mediadrop-music"
+          echo "MEDIADROP_MUSIC_PATH=$RUNNER_TEMP/mediadrop-music" >> "$GITHUB_ENV"
+      - name: Validate Compose and build image
+        run: |
+          docker compose config --quiet
+          docker compose build
+      - name: Run integration tests inside image
+        run: >-
+          docker run --rm --entrypoint python3
+          --mount type=bind,source="$PWD/tests",target=/tests,readonly
+          mediadrop:local -m unittest discover -s /tests -v
+      - name: Start service and verify health
+        run: |
+          docker compose up -d --no-build --wait --wait-timeout 90
+          docker compose exec -T mediadrop python3 - < scripts/docker_smoke.py
+          test -s "$RUNNER_TEMP/mediadrop-music/docker-smoke.mp3"
+      - name: Verify clean shutdown and persistent state
+        run: |
+          before=$(docker compose exec -T mediadrop python3 -c "import hashlib,pathlib; print(hashlib.sha256(pathlib.Path('/data/config.json').read_bytes()).hexdigest())")
+          docker compose stop mediadrop
+          test "$(docker inspect mediadrop --format '{{.State.ExitCode}}')" = 0
+          docker compose up -d --no-build --wait --wait-timeout 90
+          after=$(docker compose exec -T mediadrop python3 -c "import hashlib,pathlib; print(hashlib.sha256(pathlib.Path('/data/config.json').read_bytes()).hexdigest())")
+          test "$before" = "$after"
+          docker compose exec -T mediadrop python3 - < scripts/docker_smoke.py
+      - name: Clean up test containers and volume
+        if: always()
+        run: docker compose down --volumes
