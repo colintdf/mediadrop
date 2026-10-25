@@ -86,3 +86,8 @@ if ProcessInfo.processInfo.environment["MEDIADROP_LIVE_MUSICBRAINZ"] == "1" {
     expect(matches.allSatisfy { !$0.title.isEmpty && !$0.artist.isEmpty && $0.tracks.count == count && $0.tracks.allSatisfy { !$0.0.isEmpty } }, "Live album, artist and track titles")
     print("PASS: live MusicBrainz lookup HTTP 200, exact disc match and \(count) track titles")
 }
+
+expect(Core.ejectDevice("/dev/disk7s1") == "/dev/disk7", "Eject whole optical device")
+expect(Core.ejectDevice("/dev/rdisk7") == "/dev/disk7", "Normalise raw optical device")
+expect(Core.ejectDevice("/Volumes/Audio CD") == nil, "Never eject an arbitrary volume")
+expect(Core.ejectDevice("/dev/disk7-invalid") == nil, "Reject invalid device suffix")

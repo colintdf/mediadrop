@@ -262,6 +262,28 @@ final class RipperModel: ObservableObject {
             }
         }
         progress = 1
+        if failures == 0,
+           pending.contains(where: { queue[$0].disc == discKey }),
+           !queue.contains(where: { $0.disc == discKey && $0.status != "Complete" }),
+           let target = Core.ejectDevice(device), !discID.isEmpty {
+            do {
+                try checkStop()
+                // Verify the loaded disc is still present before ejecting this drive.
+                let result = try await runner.run(try tool("discid"), [target])
+                let currentID = String(data: result, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard currentID == discID else {
+                    message = "Finished. Your music is in MediaDrop. The disc changed, so it was not ejected."
+                    return
+                }
+                _ = try await runner.run(URL(fileURLWithPath: "/usr/sbin/diskutil"), ["eject", target])
+                message = "Finished. Your music is in MediaDrop. CD ejected."
+                return
+            } catch {
+                try checkStop()
+                message = "Finished. Your music is in MediaDrop. Automatic eject failed: " + error.localizedDescription
+                return
+            }
+        }
         message = failures == 0 ? "Finished. Your music is in MediaDrop." : "\(failures) track(s) need attention. Fix the issue and choose Retry pending."
     }
     func forget(_ id: String) {
