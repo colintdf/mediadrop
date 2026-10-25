@@ -1,6 +1,6 @@
 # MediaDrop Ripper for Mac
 
-A native SwiftUI CD client for MediaDrop. Requires macOS 15+, an audio CD drive,
+A native SwiftUI CD client for MediaDrop. Requires macOS 14+, an audio CD drive,
 and MediaDrop server 1.5+. The client bundles its own audio-only FFmpeg encoder,
 LAME and libdiscid. No Python, Homebrew or Terminal is needed to run it.
 
@@ -55,7 +55,7 @@ app running during work; it does not install a background agent.
 ## Build
 
 GitHub Actions builds and tests separate Apple Silicon and Intel DMGs. Build on
-macOS 15+ with Xcode command line tools and Homebrew installed:
+macOS 14+ with Xcode command line tools and Homebrew installed:
 
 ```sh
 bash client/build-macos.sh
@@ -74,3 +74,7 @@ Uploads are raw MP3 bodies to `/api/upload?folder=ID&name=NAME&layout=album`, wi
 `X-MediaDrop: 1`, percent-encoded JSON in `X-MediaDrop-Tags`, and a persistent
 `X-MediaDrop-Upload-ID`. The 202 response contains `job`; poll `/api/jobs/ID`
 until done/failed. Local HTTP is supported for the user's private LAN.
+
+Each app, helper and bundled dynamic library is checked for a deployment target
+of macOS 14.0 or earlier. CI launches the Apple Silicon app on macOS 14 and the
+Intel app on macOS 15. A physical CD drive is still needed for extraction testing.

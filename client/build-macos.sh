@@ -6,7 +6,9 @@ BUILD="$ROOT/client/build"
 APP="$BUILD/MediaDrop Ripper.app"
 TOOLS="$APP/Contents/Resources/Tools"
 SOURCES="$APP/Contents/Resources/Sources"
-export MACOSX_DEPLOYMENT_TARGET=15.0
+export MACOSX_DEPLOYMENT_TARGET=14.0
+MAC_ARCH="$(uname -m)"
+MAC_TARGET="$MAC_ARCH-apple-macos14.0"
 mkdir -p "$BUILD" "$TOOLS" "$APP/Contents/MacOS" "$SOURCES"
 # Dependencies are installed only on the build machine. The finished app
 # includes their dynamic libraries and never needs Homebrew on the user's Mac.
@@ -31,7 +33,7 @@ if [ ! -d "$BUILD/ffmpeg-8.0.1" ]; then tar -xf "$BUILD/ffmpeg-8.0.1.tar.xz" -C 
 cp "$BUILD/ffmpeg-8.0.1/ffmpeg" "$TOOLS/ffmpeg"
 clang client/discid.c -I"$DISCID/include" -L"$DISCID/lib" -ldiscid \
   -Wl,-headerpad_max_install_names -o "$TOOLS/discid"
-swiftc -swift-version 5 -O -parse-as-library client/Sources/*.swift \
+swiftc -target "$MAC_TARGET" -swift-version 5 -O -parse-as-library client/Sources/*.swift \
   -framework SwiftUI -framework AppKit -o "$APP/Contents/MacOS/MediaDropRipper"
 python3 client/bundle_libraries.py "$APP"
 swift client/make-icon.swift "$BUILD/AppIcon.iconset"
@@ -57,9 +59,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>MediaDrop Ripper</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>1.0.0</string>
+<key>CFBundleShortVersionString</key><string>1.0.1</string>
 <key>CFBundleVersion</key><string>1</string>
-<key>LSMinimumSystemVersion</key><string>15.0</string>
+<key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSHighResolutionCapable</key><true/>
 <key>NSRemovableVolumesUsageDescription</key><string>MediaDrop reads your audio CD to copy selected music tracks.</string>
 <key>NSLocalNetworkUsageDescription</key><string>MediaDrop uploads your ripped CDs to your media server on your local network.</string>
@@ -74,11 +76,12 @@ codesign --force --sign - "$TOOLS/ffmpeg"
 codesign --force --sign - "$TOOLS/discid"
 codesign --force --sign - "$APP"
 codesign --verify --deep --strict "$APP"
+python3 client/verify_macos.py "$APP"
 # Test the bundled encoder, with Homebrew binaries excluded from PATH.
 /usr/bin/afconvert /System/Library/Sounds/Glass.aiff "$BUILD/test.wav" -f WAVE -d LEI16@44100
 PATH=/usr/bin:/bin "$TOOLS/ffmpeg" -v error -y -i "$BUILD/test.wav" -c:a libmp3lame -b:a 320k "$BUILD/test.mp3"
 test -s "$BUILD/test.mp3"
-swiftc -swift-version 5 client/Sources/Core.swift client/Tests/main.swift -o "$BUILD/core-tests"
+swiftc -target "$MAC_TARGET" -swift-version 5 client/Sources/Core.swift client/Tests/main.swift -o "$BUILD/core-tests"
 "$BUILD/core-tests"
 # Launch the packaged app on the build Mac to catch missing runtime resources.
 open -a "$APP"
