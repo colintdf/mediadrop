@@ -11,6 +11,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+      - name: Test mixed web upload queue
+        run: node tests/test_web_uploads.js
       - name: Prepare music bind mount
         run: |
           mkdir -p "$RUNNER_TEMP/mediadrop-music"

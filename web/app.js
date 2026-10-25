@@ -73,6 +73,8 @@ function inferFilename(filename){
   name=name.replace(/^\d{1,3}(?:\s+[-\u2013\u2014]\s+|[.)]\s*|-\s*)(?=\S)/,'');
   name=name.replace(/^0\d\s+(?=\S)/,'').trim();
   if(!name)return {};
+  const albumMatch=name.match(/^(.+?)\s+[-\u2013\u2014]\s+(.+?)\s+[-\u2013\u2014]\s+(\d{1,3})(?:[.)]?\s+|\s*[-\u2013\u2014]\s+)(.+)$/u);
+  if(albumMatch)return {artist:albumMatch[1].trim(),album:albumMatch[2].trim().replace(/^['"]|['"]$/g,''),track:String(Number(albumMatch[3])),title:albumMatch[4].trim()};
   const match=name.match(/^(.*?)\s+[-\u2013\u2014]\s+(.+)$/u);
   if(match&&/\p{L}/u.test(match[1])&&/[\p{L}\p{N}]/u.test(match[2])){
     const title=match[2].replace(/^\d{1,3}(?:\s+[-\u2013\u2014]\s+|[.)]\s*)(?=\S)/,'').trim();
@@ -86,7 +88,7 @@ function addFiles(files){
   const rejected=[];
   for(const file of files){
     if(!supported.test(file.name) || !file.size || file.size>10*1024**3){rejected.push(file.name);continue;}
-    pending.push({uid:crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random(),file,name:file.name,bytes:file.size,folder:folder.name,folderId:folder.id,status:'draft',progress:0,metadata:{},inferred:inferFilename(file.name),layout:'flat',output_format:$('outputFormat').value});
+    pending.push({uid:crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random(),file,name:file.name,bytes:file.size,folder:folder.name,folderId:folder.id,status:'draft',progress:0,metadata:{},inferred:inferFilename(file.name),layout:'auto',output_format:$('outputFormat').value});
   }
   banner(rejected.length?`Not added: ${rejected.join(', ')}. Choose supported audio files smaller than 10 GB. This version accepts files, not folders.`:'');
   renderTransfers();
@@ -96,7 +98,7 @@ async function pump(){
   try{for(const item of pending.filter(p=>p.status==='waiting')){
     item.status='uploading';renderTransfers();
     try{await new Promise((resolve,reject)=>{
-      const xhr=new XMLHttpRequest();xhr.open('POST',`/api/upload?folder=${encodeURIComponent(item.folderId)}&name=${encodeURIComponent(item.name)}&layout=${encodeURIComponent(item.layout||'flat')}&format=${encodeURIComponent(item.output_format||'mp3')}`);xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.setRequestHeader('X-MediaDrop','1');xhr.setRequestHeader('X-MediaDrop-Tags',encodeURIComponent(JSON.stringify(item.metadata||{})));
+      const xhr=new XMLHttpRequest();xhr.open('POST',`/api/upload?folder=${encodeURIComponent(item.folderId)}&name=${encodeURIComponent(item.name)}&layout=${encodeURIComponent(item.layout||'auto')}&format=${encodeURIComponent(item.output_format||'mp3')}`);xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.setRequestHeader('X-MediaDrop','1');xhr.setRequestHeader('X-MediaDrop-Tags',encodeURIComponent(JSON.stringify(item.metadata||{})));
       xhr.upload.onprogress=e=>{if(e.lengthComputable){item.progress=Math.round(e.loaded/e.total*100);renderTransfers();}};
       xhr.onload=()=>{try{const response=JSON.parse(xhr.responseText);if(xhr.status<200||xhr.status>=300)throw new Error(response.error||'Upload failed.');item.job=response.job;item.status='queued';item.progress=0;resolve();}catch(e){reject(e);}};
       xhr.onerror=()=>reject(new Error('Connection interrupted. Please add the file again.'));xhr.onabort=()=>reject(new Error('Upload cancelled.'));xhr.send(item.file);
@@ -131,6 +133,7 @@ function trackCredits(track){
 function previewPath(){
   if(!editing)return;
   const tags=editorValues(),layout=$('trackLayout').value,folder=state.folders.find(f=>f.id===$('trackFolder').value);
+  if(layout==='auto'){$('trackPath').textContent=folder?.path+'/[Each track’s artist]/[Its album or single]/'+editing.name;return;}
   if(layout==='keep'){$('trackPath').textContent=editing.path||'';return;}
   let parts=[folder?.path||'Choose a music folder'];
   if(layout==='single'||layout==='album')parts.push(pathPart(primaryArtist(tags))||'[Artist]');
@@ -151,7 +154,7 @@ async function openMetadata(id,draft=false){
     $('trackFolder').innerHTML=state.folders.filter(f=>f.type==='music').map(f=>`<option value="${escapeHTML(f.id)}">${escapeHTML(f.name)}</option>`).join('');
     $('trackFolder').value=track.folderId||track.folder_id||selected||'';
     $('trackLayout').querySelector('[value="keep"]').disabled=draft;
-    $('trackLayout').value=draft?(track.layout||'flat'):'keep';
+    $('trackLayout').value=draft?(track.layout||'auto'):'keep';
     $('sharedFieldsLabel').hidden=!draft;
     $('metadataHint').textContent=draft?'Separate track performers with semicolons; Album artist keeps a release together. Only fields you change replace existing tags. Leave other fields untouched to preserve them. A single gets its own release folder. Filename suggestions fill missing tags on upload; existing embedded tags win unless you edit a field.':'Current tags are read from the audio file. Missing artist/title values may be suggested from its filename and will be stored when you save. Clearing a field removes that tag. Choose a destination to move the track without re-encoding.';
     $('saveMetadata').textContent=draft?'Save details before upload':'Save tags and location';

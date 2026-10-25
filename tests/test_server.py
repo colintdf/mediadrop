@@ -65,6 +65,54 @@ class Integration(unittest.TestCase):
     def upload(self, folder, name, data):
         return self.request('/api/upload?' + urlencode({'folder': folder, 'name': name}), raw=data)
 
+
+    def test_mixed_web_uploads_auto_folders_and_individual_artists(self):
+        folder = self.folder()
+        source = self.root / 'source.wav'
+        source.write_bytes(self.wav())
+        tagged = []
+        for artist, album in [('Emily Burns', 'Seven Scenes'), ('The Anchoress', 'The Art Of Losing')]:
+            path = self.root / (artist + '.mp3')
+            subprocess.run(['ffmpeg', '-v', 'error', '-i', str(source),
+                            '-c:a', 'libmp3lame', '-metadata', 'artist=' + artist,
+                            '-metadata', 'album_artist=' + artist, '-metadata', 'album=' + album,
+                            '-metadata', 'title=Tagged song', str(path)], check=True)
+            tagged.append((artist, album, path.name, path.read_bytes()))
+        untagged = [
+            ('Amelia Coburn', 'Between The Moon and The Milkman', "Amelia Coburn - 'Between The Moon and The Milkman' - 01 When The Tide Rolls In.wav", source.read_bytes()),
+            ('Emma Pollock and Pippa Murphy', 'Equaliser', 'Emma Pollock and Pippa Murphy - Equaliser - 01 Monochrome.wav', source.read_bytes())
+        ]
+        # Queue every file before waiting, as the browser does for a mixed batch.
+        for artist, album, name, payload in tagged + untagged:
+            code, result = self.request('/api/upload?' + urlencode({
+                'folder': folder, 'name': name, 'layout': 'auto'
+            }), raw=payload)
+            self.assertEqual(code, 202, result)
+        self.app.queue.join()
+        for artist, album, name, _ in tagged + untagged:
+            output = self.dest / artist / album / (Path(name).stem + '.mp3')
+            self.assertTrue(output.is_file(), self.app.jobs)
+            actual = read_tags(output)
+            self.assertEqual(actual['artist'], artist)
+            self.assertEqual(actual['album'], album)
+        self.assertFalse(list(self.dest.glob('*.mp3')))
+        _, result = self.request('/api/library?view=artists')
+        self.assertEqual({item['name'] for item in result['items']},
+                         {item[0] for item in tagged + untagged})
+
+    def test_auto_single_uses_own_filename_and_keeps_flat_explicit(self):
+        folder = self.folder()
+        for name, layout in [('Alpha - First.wav', 'auto'), ('Beta - Second.wav', 'auto'), ('Flat.wav', 'flat')]:
+            code, result = self.request('/api/upload?' + urlencode({
+                'folder': folder, 'name': name, 'layout': layout
+            }), raw=self.wav())
+            self.assertEqual(code, 202, result)
+        self.app.queue.join()
+        for artist, title in [('Alpha', 'First'), ('Beta', 'Second')]:
+            output = self.dest / artist / title / (artist + ' - ' + title + '.mp3')
+            self.assertEqual(read_tags(output)['artist'], artist)
+        self.assertTrue((self.dest / 'Flat.mp3').is_file())
+
     def test_wav_conversion_mp3_copy_and_duplicate(self):
         folder = self.folder()
         self.assertEqual(self.upload(folder, 'Test track.wav', self.wav())[0], 202)
