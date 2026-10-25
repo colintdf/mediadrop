@@ -59,7 +59,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>MediaDrop Ripper</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>1.1.1</string>
+<key>CFBundleShortVersionString</key><string>1.1.2</string>
 <key>CFBundleVersion</key><string>1</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSHighResolutionCapable</key><true/>
@@ -84,7 +84,7 @@ test -s "$BUILD/test.mp3"
 PATH=/usr/bin:/bin "$TOOLS/ffmpeg" -v error -y -i "$BUILD/test.wav" -c:a flac "$BUILD/test.flac"
 test -s "$BUILD/test.flac"
 swiftc -target "$MAC_TARGET" -swift-version 5 client/Sources/Core.swift client/Tests/main.swift -o "$BUILD/core-tests"
-"$BUILD/core-tests"
+MEDIADROP_LIVE_MUSICBRAINZ=1 "$BUILD/core-tests"
 # Launch the packaged app on the build Mac to catch missing runtime resources.
 open -a "$APP"
 sleep 3
