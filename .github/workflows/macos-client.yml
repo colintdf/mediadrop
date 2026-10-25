@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
     paths: ['client/**', '.github/workflows/macos-client.yml']
+  pull_request:
+    paths: ['client/**', '.github/workflows/macos-client.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -25,6 +27,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
   publish:
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     permissions:

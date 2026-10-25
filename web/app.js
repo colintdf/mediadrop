@@ -170,7 +170,7 @@ $('metadataForm').onsubmit=async e=>{
     if(editing.draft){
       const item=editing.track;item.metadata={...item.metadata,...changes};item.layout=layout;item.folderId=folder;item.folder=state.folders.find(f=>f.id===folder)?.name||item.folder;
       if($('sharedFields').checked){
-        const shared=Object.fromEntries(Object.entries(changes).filter(([k])=>['artist','album_artist','date','genre'].includes(k)));
+        const shared=Object.fromEntries(Object.entries(changes).filter(([k])=>['date','genre'].includes(k)));
         for(const draft of pending.filter(j=>j.status==='draft'&&j!==item))draft.metadata={...draft.metadata,...shared};
       }
       renderTransfers();
