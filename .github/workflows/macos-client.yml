@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [macos-14, macos-15-intel]
+        runner: [macos-14]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
     steps:
@@ -46,11 +46,11 @@ jobs:
           cat > notes.txt <<'NOTES'
           Native MediaDrop CD Ripper for macOS 14 or later.
 
-          Download arm64 for Apple Silicon (M-series), or x86_64 for Intel.
+          Download arm64 for Apple Silicon (M-series). Intel builds are paused.
           Open the DMG and drag MediaDrop Ripper into Applications. No Terminal setup is needed.
           Requires MediaDrop server 1.6 or later.
 
-          This is an initial hardware-test build. The app compiles and launches on both architectures, its bundled encoder and core tests pass, and every bundled binary is checked for a macOS 14-compatible deployment target. The Apple Silicon app is launched on macOS 14; the Intel app is launched on macOS 15. Reading a real audio CD still needs checking on your Mac. The second-read option is not AccurateRip verification.
+          This is an initial hardware-test build. The Apple Silicon app compiles and launches on macOS 14, its bundled encoder and core tests pass, and every bundled binary is checked for a macOS 14-compatible deployment target. Reading a real audio CD still needs checking on your Mac. The second-read option is not AccurateRip verification.
 
           The app is ad-hoc signed, not Apple notarised. If macOS blocks it, open it once, then use System Settings > Privacy & Security > Open Anyway for this app.
           NOTES
