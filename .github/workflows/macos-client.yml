@@ -42,7 +42,7 @@ jobs:
           BUILD_NUMBER: ${{ github.run_number }}
           COMMIT_SHA: ${{ github.sha }}
         run: |
-          tag="ripper-1.1.0-build.$BUILD_NUMBER"
+          tag="ripper-1.1.1-build.$BUILD_NUMBER"
           cat > notes.txt <<'NOTES'
           Native MediaDrop CD Ripper for macOS 14 or later.
 
@@ -54,4 +54,4 @@ jobs:
 
           The app is ad-hoc signed, not Apple notarised. If macOS blocks it, open it once, then use System Settings > Privacy & Security > Open Anyway for this app.
           NOTES
-          gh release create "$tag" installers/* --target "$COMMIT_SHA" --prerelease --title "MediaDrop Ripper 1.1.0 · Build $BUILD_NUMBER" --notes-file notes.txt
+          gh release create "$tag" installers/* --target "$COMMIT_SHA" --prerelease --title "MediaDrop Ripper 1.1.1 · Build $BUILD_NUMBER" --notes-file notes.txt

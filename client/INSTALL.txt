@@ -1,4 +1,4 @@
-MediaDrop Ripper 1.1.0
+MediaDrop Ripper 1.1.1
 
 Requires macOS 14 or later and an audio CD drive.
 Use the arm64 image for Apple Silicon or x86_64 for Intel.

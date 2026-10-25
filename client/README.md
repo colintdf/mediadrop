@@ -83,3 +83,8 @@ Format is stored per queued track. Existing queues without a format remain MP3.
 The same CD can be queued once per destination and format. This version encodes
 one chosen format per operation; simultaneous archive/listening output is not yet
 implemented. FLAC uploads require server 1.6 to retain FLAC on the server.
+
+CD lookup resolves the selected mounted partition to its raw whole-disc device,
+then retries the whole block device and original path. It never switches to a
+different drive. Look up CD retries a failed TOC read. Failures save device errors
+to disc-lookup.txt under Show saved files, rather than discarding diagnostics.

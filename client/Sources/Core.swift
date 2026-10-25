@@ -63,6 +63,19 @@ enum Core {
         guard let url = parts.url else { throw RipError("Invalid server address.") }
         return url
     }
+    // diskutil can identify a mounted CD partition. libdiscid needs the
+    // optical device's whole-disc TOC, preferably through its raw BSD node.
+    static func discDevices(_ device: String) -> [String] {
+        let name = device.replacingOccurrences(of: "/dev/", with: "")
+        guard let match = name.range(of: #"^r?disk[0-9]+"#, options: .regularExpression) else { return [] }
+        let whole = String(name[match]).replacingOccurrences(of: #"^r"#, with: "", options: .regularExpression)
+        var result: [String] = []
+        for candidate in ["/dev/r" + whole, "/dev/" + whole, device] where !result.contains(candidate) { result.append(candidate) }
+        return result
+    }
+    static func validDiscID(_ text: String) -> Bool {
+        text.range(of: #"^[A-Za-z0-9._-]{27}-$"#, options: .regularExpression) != nil
+    }
     static func key(_ text: String) -> String {
         SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
     }

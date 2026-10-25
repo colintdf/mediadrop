@@ -25,6 +25,7 @@ final class RipperModel: ObservableObject {
     @Published var doubleRead = false
     private var device = ""
     private var discID = ""
+    private var discReadError = ""
     private var lastLookup = Date.distantPast
     private var discKey = ""
     private var stopped = false
@@ -88,7 +89,7 @@ final class RipperModel: ObservableObject {
         let volumes = try FileManager.default.contentsOfDirectory(at: URL(fileURLWithPath: "/Volumes"), includingPropertiesForKeys: nil)
         var candidates: [(URL, String)] = []
         for volume in volumes {
-            let data = try await self.runner.run(URL(fileURLWithPath: "/usr/sbin/diskutil"), ["info", "-plist", volume.path])
+            guard let data = try? await self.runner.run(URL(fileURLWithPath: "/usr/sbin/diskutil"), ["info", "-plist", volume.path]) else { try self.checkStop(); continue }
             let info = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] ?? [:]
             let fs = (info["FilesystemType"] as? String ?? "").lowercased()
             if fs.contains("cdda") || info["Content"] as? String == "CD_DA" {
@@ -117,16 +118,40 @@ final class RipperModel: ObservableObject {
         album = url.lastPathComponent == "Audio CD" ? "" : url.lastPathComponent
         artist = ""; date = ""; genre = ""; discNumber = "1"
         tracks = files.enumerated().map { DiscTrack(id: $0.offset + 1, source: $0.element, title: "Track \($0.offset + 1)") }
-        if !device.isEmpty, let helper = try? tool("discid"), let result = try? await runner.run(helper, [device]) { discID = String(data: result, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
+        try await readDiscID()
         // Fallback is a queue key only, never presented as a MusicBrainz Disc ID.
         discKey = discID.isEmpty ? Core.key(url.path + files.map { "\($0.lastPathComponent):\((try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)" }.joined(separator: "|")) : discID
         message = "\(tracks.count) tracks ready. Review the details before ripping."
         if !discID.isEmpty { try await lookupDisc() }
         else { message += " Disc lookup unavailable; enter the album and track names manually." }
     }
-    func lookup() { perform { try await self.lookupDisc() } }
+    private func readDiscID() async throws {
+        discID = ""; discReadError = ""
+        var failures: [String] = []
+        let helper = try tool("discid")
+        for candidate in Core.discDevices(device) {
+            try checkStop()
+            do {
+                let result = try await runner.run(helper, [candidate])
+                let id = String(data:result,encoding:.utf8)?.trimmingCharacters(in:.whitespacesAndNewlines) ?? ""
+                guard Core.validDiscID(id) else { throw RipError("The drive returned an invalid disc identifier.") }
+                discID = id; discKey = id
+                return
+            } catch {
+                try checkStop()
+                failures.append("\(candidate): \(error.localizedDescription)")
+            }
+        }
+        discReadError = failures.last ?? "The selected folder is not associated with a readable optical-disc device."
+        let diagnostic = "MediaDrop Ripper CD lookup diagnostics\nDevice: \(device)\n" + failures.joined(separator:"\n")
+        try? diagnostic.write(to:storage.appendingPathComponent("disc-lookup.txt"),atomically:true,encoding:.utf8)
+    }
+    func lookup() { perform {
+        if self.discID.isEmpty { try await self.readDiscID() }
+        try await self.lookupDisc()
+    } }
     private func lookupDisc() async throws {
-        guard !discID.isEmpty else { throw RipError("A readable disc ID is needed for automatic lookup. You can enter the details manually.") }
+        guard !discID.isEmpty else { throw RipError("Could not read this CD’s table of contents. Reinsert the CD and choose Find CD again, then retry lookup. " + discReadError + " Details are saved in disc-lookup.txt under Show saved files.") }
         message = "Looking up the CD on MusicBrainz…"
         let delay = 1.1 - Date().timeIntervalSince(lastLookup)
         if delay > 0 { try await Task.sleep(nanoseconds:UInt64(delay * 1_000_000_000)) }
