@@ -51,6 +51,17 @@ struct ReleaseChoice: Identifiable {
 }
 
 enum Core {
+    static func discLookupURL(_ discID: String) -> URL {
+        var parts = URLComponents(string: "https://musicbrainz.org/ws/2/discid/\(discID)")!
+        // Disc IDs are a release subquery and require an explicit releases include.
+        parts.queryItems = [
+            URLQueryItem(name: "fmt", value: "json"),
+            URLQueryItem(name: "inc", value: "releases+recordings+artist-credits+discids"),
+            URLQueryItem(name: "cdstubs", value: "no")
+        ]
+        return parts.url!
+    }
+
     static func serverURL(_ text: String) throws -> URL {
         guard var parts = URLComponents(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
               ["http", "https"].contains(parts.scheme?.lowercased() ?? ""),
