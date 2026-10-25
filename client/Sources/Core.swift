@@ -84,6 +84,10 @@ enum Core {
         for candidate in ["/dev/r" + whole, "/dev/" + whole, device] where !result.contains(candidate) { result.append(candidate) }
         return result
     }
+    static func ejectDevice(_ device: String) -> String? {
+        guard device.range(of: #"^/dev/r?disk[0-9]+(s[0-9]+)*$"#, options: .regularExpression) != nil else { return nil }
+        return discDevices(device).first?.replacingOccurrences(of: "/dev/rdisk", with: "/dev/disk")
+    }
     static func validDiscID(_ text: String) -> Bool {
         text.range(of: #"^[A-Za-z0-9._-]{27}-$"#, options: .regularExpression) != nil
     }
