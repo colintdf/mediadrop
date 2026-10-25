@@ -16,6 +16,11 @@ def infer_filename(filename):
     name = re.sub(r'^0\d\s+(?=\S)', '', name, count=1).strip()
     if not name:
         return {}
+    # Only interpret an album component when a numbered track follows it.
+    album_match = re.fullmatch(r'(.+?)\s+' + DASH + r'\s+(.+?)\s+' + DASH + r'\s+(\d{1,3})(?:[.)]?\s+|\s*' + DASH + r'\s+)(.+)', name)
+    if album_match:
+        artist, album, track, title = album_match.groups()
+        return {'artist': artist.strip(), 'album': album.strip().strip("'\""), 'track': str(int(track)), 'title': title.strip()}
     parts = re.split(r'\s+' + DASH + r'\s+', name, maxsplit=1)
     if len(parts) == 2 and any(c.isalpha() for c in parts[0]) and any(c.isalnum() for c in parts[1]):
         title = re.sub(r'^\d{1,3}(?:\s+' + DASH + r'\s+|[.)]\s*)(?=\S)', '', parts[1], count=1).strip()

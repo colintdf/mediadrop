@@ -636,7 +636,10 @@ class App:
             overrides = validate_metadata(job.get('metadata', {}))
             suppressed = {k for k,v in overrides.items() if k in ('artist','title') and not v}
             effective, inferred = metadata_from_filename(job['name'], {**read_tags(temp), **overrides}, blocked=set(overrides))
-            defaults = single_release_defaults(effective, blocked=set(overrides)) if job.get('layout') == 'single' else {}
+            layout = job.get('layout', 'flat')
+            if layout == 'auto':
+                layout = 'album' if effective.get('album', '').strip() else 'single'
+            defaults = single_release_defaults(effective, blocked=set(overrides)) if layout == 'single' else {}
             updates = {**inferred, **defaults, **overrides}
             if updates:
                 tag_temp = temp.with_name(temp.stem + '-tags' + extension)
@@ -646,14 +649,14 @@ class App:
                 finally:
                     tag_temp.unlink(missing_ok=True)
             metadata = read_tags(temp)
-            dest = organised_folder(root, metadata, job.get('layout', 'flat'))
+            dest = organised_folder(root, metadata, layout)
             if dest != temp.parent:
                 moved = dest / temp.name
                 shutil.move(str(temp), moved)
                 temp = moved
             check_directory(dest)
             output = publish(temp, dest, Path(job['name']).stem + extension)
-            self.index_path(root, output, metadata, suppressed, job.get('layout'))
+            self.index_path(root, output, metadata, suppressed, layout)
             self.update(job, status='done', progress=100, output=output.name, bytes=output.stat().st_size, converted=not copy, metadata=metadata, destination=str(dest), library_root=str(root))
         finally:
             temp.unlink(missing_ok=True)
@@ -848,7 +851,7 @@ class Handler(BaseHTTPRequestHandler):
             if output_format not in ('mp3', 'flac'):
                 raise ValueError('Choose MP3 or FLAC output.')
             layout = args.get('layout', ['flat'])[0]
-            if layout not in ('flat', 'album', 'single'):
+            if layout not in ('auto', 'flat', 'album', 'single'):
                 raise ValueError('Invalid folder layout.')
             if layout != 'flat':
                 preview, _ = metadata_from_filename(name, metadata, blocked=set(metadata))
