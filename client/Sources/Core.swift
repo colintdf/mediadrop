@@ -53,10 +53,10 @@ struct ReleaseChoice: Identifiable {
 enum Core {
     static func discLookupURL(_ discID: String) -> URL {
         var parts = URLComponents(string: "https://musicbrainz.org/ws/2/discid/\(discID)")!
-        // Disc IDs are a release subquery and require an explicit releases include.
+        // Disc lookups already return releases; these includes request track metadata.
         parts.queryItems = [
             URLQueryItem(name: "fmt", value: "json"),
-            URLQueryItem(name: "inc", value: "releases+recordings+artist-credits+discids"),
+            URLQueryItem(name: "inc", value: "recordings+artist-credits"),
             URLQueryItem(name: "cdstubs", value: "no")
         ]
         return parts.url!
