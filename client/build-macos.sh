@@ -8,8 +8,8 @@ TOOLS="$APP/Contents/Resources/Tools"
 SOURCES="$APP/Contents/Resources/Sources"
 export MACOSX_DEPLOYMENT_TARGET=15.0
 mkdir -p "$BUILD" "$TOOLS" "$APP/Contents/MacOS" "$SOURCES"
-# Only two small dynamic libraries are installed on the build machine. The
-# finished app includes them and never needs Homebrew on the user's Mac.
+# Dependencies are installed only on the build machine. The finished app
+# includes their dynamic libraries and never needs Homebrew on the user's Mac.
 brew install lame libdiscid pkg-config
 LAME="$(brew --prefix lame)"
 DISCID="$(brew --prefix libdiscid)"
@@ -39,7 +39,7 @@ iconutil -c icns "$BUILD/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.ic
 # Bundle exact upstream source archives and the build recipe alongside the LGPL
 # binaries, so rebuilding/replacing them does not depend on an online promise.
 cp "$BUILD/ffmpeg-8.0.1.tar.xz" "$SOURCES/"
-for formula in lame libdiscid; do
+for formula in lame libdiscid $(brew deps --installed lame libdiscid); do
   brew fetch --build-from-source "$formula"
   archive="$(brew --cache --build-from-source "$formula")"
   cp "$archive" "$SOURCES/"

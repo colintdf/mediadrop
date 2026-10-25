@@ -1,8 +1,10 @@
 MediaDrop Ripper bundles unmodified FFmpeg 8.0.1, LAME and libdiscid.
 FFmpeg: https://ffmpeg.org/ LGPL 2.1 or later (this audio-only build).
 LAME: https://lame.sourceforge.io/ LGPL 2 or later.
+mpg123 (if linked by LAME): https://www.mpg123.de/ LGPL 2.1 or later.
 libdiscid: https://musicbrainz.org/doc/libdiscid LGPL 2.1 or later.
-Exact source archives, containing their license texts, are in Resources/Sources.
+Exact source archives for these libraries and their runtime dependencies,
+containing their license texts, are in Resources/Sources.
 The FFmpeg build recipe and disc ID helper source are included there too.
 FFmpeg's own libraries are compiled into its standalone executable; LAME and
 libdiscid are dynamic libraries under Contents/Frameworks and may be replaced.
