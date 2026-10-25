@@ -83,8 +83,8 @@ PATH=/usr/bin:/bin "$TOOLS/ffmpeg" -v error -y -i "$BUILD/test.wav" -c:a libmp3l
 test -s "$BUILD/test.mp3"
 PATH=/usr/bin:/bin "$TOOLS/ffmpeg" -v error -y -i "$BUILD/test.wav" -c:a flac "$BUILD/test.flac"
 test -s "$BUILD/test.flac"
-swiftc -target "$MAC_TARGET" -swift-version 5 client/Sources/Core.swift client/Tests/main.swift -o MEDIADROP_LIVE_MUSICBRAINZ=1 "$BUILD/core-tests"
-"$BUILD/core-tests"
+swiftc -target "$MAC_TARGET" -swift-version 5 client/Sources/Core.swift client/Tests/main.swift -o "$BUILD/core-tests"
+MEDIADROP_LIVE_MUSICBRAINZ=1 "$BUILD/core-tests"
 # Launch the packaged app on the build Mac to catch missing runtime resources.
 open -a "$APP"
 sleep 3
