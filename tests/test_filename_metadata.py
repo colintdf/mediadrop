@@ -28,6 +28,31 @@ class FilenameTests(unittest.TestCase):
 # Only define new integration tests on a harness subclass whose inherited tests
 # are excluded from discovery below.
 class NewBehaviour(test_server.Integration):
+    def test_flac_retains_pcm_and_metadata(self):
+        import subprocess
+        folder=self.folder()
+        source=self.root/'hires.wav'
+        subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','sine=frequency=1234:duration=0.2','-ar','96000','-c:a','pcm_s24le',str(source)],check=True)
+        url='/api/upload?'+urlencode({'folder':folder,'name':'Artist - Song.wav','layout':'single','format':'flac'})
+        self.assertEqual(self.request(url,raw=source.read_bytes())[0],202)
+        self.app.queue.join()
+        job=self.app.jobs[-1]
+        self.assertEqual(job['status'],'done',job)
+        output=self.dest/'Artist'/'Song'/'Artist - Song.flac'
+        self.assertEqual(read_tags(output)['album'],'Song')
+        def pcm(path):
+            return subprocess.check_output(['ffmpeg','-v','error','-i',str(path),'-f','s32le','-c:a','pcm_s32le','-'])
+        self.assertEqual(pcm(source),pcm(output))
+        info=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-of','json',str(output)]))['streams'][0]
+        self.assertEqual(info['sample_rate'],'96000')
+        self.assertEqual(info['bits_per_raw_sample'],'24')
+        copy_url='/api/upload?'+urlencode({'folder':folder,'name':output.name,'format':'flac'})
+        self.assertEqual(self.request(copy_url,raw=output.read_bytes())[0],202)
+        self.app.queue.join()
+        self.assertEqual((self.dest/output.name).read_bytes(),output.read_bytes())
+        self.assertFalse(self.app.jobs[-1]['converted'])
+        self.assertEqual(self.request('/api/upload?'+urlencode({'folder':folder,'name':'bad.wav','format':'invalid'}),raw=self.wav())[0],400)
+
     def test_upload_retry_token_and_job_persist(self):
         folder=self.folder()
         payload=self.wav()

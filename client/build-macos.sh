@@ -25,7 +25,7 @@ if [ ! -d "$BUILD/ffmpeg-8.0.1" ]; then tar -xf "$BUILD/ffmpeg-8.0.1.tar.xz" -C 
   ./configure --disable-everything --disable-autodetect --disable-doc --disable-debug --disable-x86asm \
     --enable-ffmpeg --enable-avfilter --enable-swresample --enable-protocol=file,pipe \
     --enable-demuxer=aiff,wav --enable-decoder=pcm_s16be,pcm_s16le,pcm_s24be,pcm_s24le \
-    --enable-encoder=libmp3lame --enable-libmp3lame --enable-muxer=mp3 \
+    --enable-encoder=libmp3lame,flac --enable-libmp3lame --enable-muxer=mp3,flac \
     --enable-filter=aresample,aformat,anull --extra-cflags="-I$LAME/include" \
     --extra-ldflags="-L$LAME/lib -Wl,-headerpad_max_install_names"
   make -j "$(sysctl -n hw.logicalcpu)"
@@ -59,7 +59,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>MediaDrop Ripper</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>1.0.1</string>
+<key>CFBundleShortVersionString</key><string>1.1.0</string>
 <key>CFBundleVersion</key><string>1</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSHighResolutionCapable</key><true/>
@@ -81,6 +81,8 @@ python3 client/verify_macos.py "$APP"
 /usr/bin/afconvert /System/Library/Sounds/Glass.aiff "$BUILD/test.wav" -f WAVE -d LEI16@44100
 PATH=/usr/bin:/bin "$TOOLS/ffmpeg" -v error -y -i "$BUILD/test.wav" -c:a libmp3lame -b:a 320k "$BUILD/test.mp3"
 test -s "$BUILD/test.mp3"
+PATH=/usr/bin:/bin "$TOOLS/ffmpeg" -v error -y -i "$BUILD/test.wav" -c:a flac "$BUILD/test.flac"
+test -s "$BUILD/test.flac"
 swiftc -target "$MAC_TARGET" -swift-version 5 client/Sources/Core.swift client/Tests/main.swift -o "$BUILD/core-tests"
 "$BUILD/core-tests"
 # Launch the packaged app on the build Mac to catch missing runtime resources.

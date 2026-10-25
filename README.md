@@ -1,4 +1,4 @@
-# MediaDrop 1.5
+# MediaDrop 1.6
 
 A private music inbox for your media centre Mac, with a responsive web interface on port **12345**. Upload from a browser on the Mac or another device on the same home network.
 
@@ -30,7 +30,7 @@ No installer, subscription, cloud service, JavaScript build step or pip packages
 ## What it does
 
 - Multiple named music destinations, with music-only filtering. Film and TV sections are marked for a future version.
-- WAV, FLAC, M4A, AAC, OGG, OPUS, AIFF and WMA converted to MP3 using FFmpeg's LAME encoder, constant **320 kbps**, 44.1 kHz stereo (multichannel sources are downmixed). Conversion errors appear in the queue. DRM-protected files are unsupported.
+- By default, WAV, FLAC, M4A, AAC, OGG, OPUS, AIFF and WMA are converted to MP3 using FFmpeg's LAME encoder, constant **320 kbps**, 44.1 kHz stereo (multichannel sources are downmixed). Conversion errors appear in the queue. DRM-protected files are unsupported.
 - Valid MP3 uploads with no tag changes are checked and copied byte for byte, without another lossy encode. Tag edits rewrite the container using stream copy; the audio is never re-encoded.
 - Metadata supported by FFmpeg is copied where possible. Embedded artwork is not copied during conversion in this version. Existing MP3 artwork stays intact.
 - Output uses the original filename with an `.mp3` suffix. Existing names get ` (1)`, ` (2)`, etc. Existing files are never overwritten.
@@ -50,7 +50,7 @@ Choose where a track belongs, with a destination path preview:
 - **Album:** `Music/Artist/Album/track.mp3`
 - **Directly in selected music folder:** keep the original upload behaviour.
 
-There are no extra `Albums` or `Singles` folders. The first album artist is used for the artist folder when supplied, otherwise the first track artist is used. A semicolon-separated artist list never becomes one combined folder name for newly organised tracks. Singles now have a release subfolder for Plex compatibility. An existing album tag supplies its name; otherwise the track title is used. Missing album, album artist and track tags default to the single title, primary artist and 1 when explicitly organising a single. Existing nonempty tags are preserved. Album tracks require an album name. Filename characters unsuitable for folders are replaced with underscores. Existing names receive a number rather than being overwritten. Files retain their original filenames, with an MP3 extension for converted uploads.
+There are no extra `Albums` or `Singles` folders. The first album artist is used for the artist folder when supplied, otherwise the first track artist is used. A semicolon-separated artist list never becomes one combined folder name for newly organised tracks. Singles now have a release subfolder for Plex compatibility. An existing album tag supplies its name; otherwise the track title is used. Missing album, album artist and track tags default to the single title, primary artist and 1 when explicitly organising a single. Existing nonempty tags are preserved. Album tracks require an album name. Filename characters unsuitable for folders are replaced with underscores. Existing names receive a number rather than being overwritten. Files retain their original filenames, with the selected MP3 or FLAC extension for converted uploads.
 
 After uploading, use **Edit details** on the completed transfer or in **Your music library**. The editor reads the current tags from the actual file. Save tags in place or select a music destination and Single/Album layout to move the track. Clearing a field removes that tag. A file changed by another application while the editor was open must be reopened before saving. Existing files are never automatically reorganised by a scan or a tag change; choose a layout to move them.
 
@@ -161,7 +161,7 @@ Only one instance may use a settings directory. If another program already uses 
 
 ## Next phase: CD ripping client
 
-Planned separately after this server: a companion Mac client that reads audio CDs, looks up album and track metadata, rips to MP3, and sends tracks directly to a selected MediaDrop music destination. This download contains the upload server only.
+The companion Mac client reads audio CDs, looks up album and track metadata, encodes MP3 or FLAC, and sends tracks to a selected MediaDrop music destination. See the client section below.
 
 ## Developer checks
 
@@ -195,8 +195,26 @@ The native companion app lives in [client](client/README.md). It requires macOS
 14 or later and a connected audio CD drive. Download the matching Apple Silicon
 or Intel DMG from the latest **MediaDrop Ripper** prerelease on the Releases page. The app
 includes its encoder and disc ID helper, with no Terminal setup or Homebrew on
-the user's Mac. It connects to MediaDrop 1.5 or later over the local network.
+the user's Mac. It connects to MediaDrop 1.6 or later over the local network.
 
 The build checks compile the app, test metadata and request handling, run the
 bundled encoder and verify the app signature. Physical CD reading, drive support
 and macOS permission prompts still need checking on a real Mac with a CD drive.
+
+## Output format
+
+Choose MP3 (320 kbps, the default) or FLAC before adding files in the web uploader,
+or before queueing a CD in the Mac client. A queued item retains its chosen format
+when the selector changes. FLAC uploads explicitly request FLAC from the server,
+so they are not converted back to MP3. Requires client 1.1.0 and server 1.6.
+
+FLAC preserves integer source audio up to 24 bits without forcing a different
+sample rate or channel count. CDs retain their original 16-bit/44.1 kHz audio.
+Floating-point and higher-precision sources are rejected for FLAC conversion in
+this version rather than silently reducing precision. Converting an MP3 or other
+lossy source to FLAC cannot recover lost detail. Already-matching MP3/FLAC files
+are copied without re-encoding; metadata edits preserve the encoded audio.
+
+Dual-output archiving is not implemented yet. Keep archive copies outside the
+listening library to avoid duplicate releases; use a separate backup device or
+service for protection against drive failure.

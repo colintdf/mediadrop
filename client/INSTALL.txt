@@ -1,4 +1,4 @@
-MediaDrop Ripper 1.0.1
+MediaDrop Ripper 1.1.0
 
 Requires macOS 14 or later and an audio CD drive.
 Use the arm64 image for Apple Silicon or x86_64 for Intel.
@@ -8,14 +8,15 @@ Open the installed app. This initial build is ad-hoc signed, not Apple notarised
 If macOS blocks it, try opening it once, then use System Settings > Privacy &
 Security > Open Anyway for this app. No Terminal installation is needed.
 
-Update your MediaDrop server to 1.5 or later first. Enter its address in the app,
+Update your MediaDrop server to 1.6 or later first. Enter its address in the app,
 click Connect, and select a music folder. Insert an audio CD and choose Find CD.
 If necessary use Choose CD folder and select the CD under /Volumes.
 Review the MusicBrainz edition and every track before choosing Rip & upload.
 Compilation CDs can have a different artist on each track.
 
-Tracks are encoded at 320 kbps MP3. Server layout is Artist/Album/track.mp3.
-Retry pending uses saved MP3s and checks the original upload job. It does not
+Choose MP3 at 320 kbps (default) or lossless FLAC before queueing.
+Server layout is Artist/Album/track.mp3 or track.flac.
+Retry pending uses saved encoded files and checks the original upload job. It does not
 upload a second copy when the first upload was already accepted.
 Keep this app open during ripping/uploading. Stop preserves completed work.
 Completed tracks are remembered per disc and destination to prevent duplicates.
@@ -28,3 +29,8 @@ using Remove next to its pending queue entry in the app.
 The optional second-read comparison is not AccurateRip or secure-ripping
 verification. Scratched discs and physical drive compatibility require checking
 on your own Mac. This is an initial hardware-test build.
+
+Format is stored per queued track. Existing queues without a format remain MP3.
+The same CD can be queued once per destination and format. This version encodes
+one chosen format per operation; simultaneous archive/listening output is not yet
+implemented. FLAC uploads require server 1.6 to retain FLAC on the server.

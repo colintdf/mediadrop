@@ -27,7 +27,10 @@ struct RipperView: View {
                     Text("MediaDrop").font(.system(size:25,weight:.bold,design:.rounded))
                     Text("CD RIPPER").font(.system(size:11,weight:.semibold)).tracking(3).foregroundStyle(.secondary)
                 }
-                Label("320 kbps MP3",systemImage:"waveform").font(.headline)
+                Picker("Output format",selection:$model.outputFormat) {
+                    Text("MP3 · 320 kbps").tag("mp3")
+                    Text("FLAC · lossless").tag("flac")
+                }.disabled(model.busy)
                 Text("From your CD shelf\nto your music library.").foregroundStyle(.secondary).lineSpacing(5)
                 Divider()
                 Text("YOUR SERVER").font(.caption.weight(.semibold)).foregroundStyle(.secondary)

@@ -42,16 +42,16 @@ jobs:
           BUILD_NUMBER: ${{ github.run_number }}
           COMMIT_SHA: ${{ github.sha }}
         run: |
-          tag="ripper-1.0.1-build.$BUILD_NUMBER"
+          tag="ripper-1.1.0-build.$BUILD_NUMBER"
           cat > notes.txt <<'NOTES'
           Native MediaDrop CD Ripper for macOS 14 or later.
 
           Download arm64 for Apple Silicon (M-series), or x86_64 for Intel.
           Open the DMG and drag MediaDrop Ripper into Applications. No Terminal setup is needed.
-          Requires MediaDrop server 1.5 or later.
+          Requires MediaDrop server 1.6 or later.
 
           This is an initial hardware-test build. The app compiles and launches on both architectures, its bundled encoder and core tests pass, and every bundled binary is checked for a macOS 14-compatible deployment target. The Apple Silicon app is launched on macOS 14; the Intel app is launched on macOS 15. Reading a real audio CD still needs checking on your Mac. The second-read option is not AccurateRip verification.
 
           The app is ad-hoc signed, not Apple notarised. If macOS blocks it, open it once, then use System Settings > Privacy & Security > Open Anyway for this app.
           NOTES
-          gh release create "$tag" installers/* --target "$COMMIT_SHA" --prerelease --title "MediaDrop Ripper 1.0.1 · Build $BUILD_NUMBER" --notes-file notes.txt
+          gh release create "$tag" installers/* --target "$COMMIT_SHA" --prerelease --title "MediaDrop Ripper 1.1.0 · Build $BUILD_NUMBER" --notes-file notes.txt

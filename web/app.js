@@ -45,7 +45,7 @@ function renderTransfers(){
   if(!rows.length){ $('transfers').innerHTML='<div class="empty">Your next favourite belongs here.<small>Uploads and conversions will appear as you add music.</small></div>'; return; }
   $('transfers').innerHTML=rows.map(j=>{
     const statuses={draft:'Ready to upload',waiting:'Waiting to upload',uploading:`Uploading ${j.progress||0}%`,queued:'Waiting to convert',checking:'Checking audio',converting:`Converting ${j.progress||0}%`,done:'Ready to play',failed:'Needs attention'};
-    const detail=j.status==='failed'?j.error:`${size(j.bytes)} · ${j.folder}${j.status==='done'?` · ${j.converted?'Converted to MP3':'Original MP3'} · ${j.output}`:''}`;
+    const detail=j.status==='failed'?j.error:`${size(j.bytes)} · ${j.folder} · ${(j.output_format||'mp3').toUpperCase()}${j.status==='done'?` · ${j.converted?'Converted to':'Kept as'} ${(j.output_format||'mp3').toUpperCase()} · ${j.output}`:''}`;
     return `<div class="transfer ${j.status==='failed'?'failed':''}"><span class="track-icon" aria-hidden="true">${j.status==='done'?'✓':'♫'}</span><div class="track-main"><strong>${escapeHTML(j.name)}</strong><small>${escapeHTML(detail)}</small>${!['done','failed','waiting','draft'].includes(j.status)?`<div class="progress ${['queued','checking'].includes(j.status)?'indeterminate':''}"><i></i></div>`:''}</div><div class="track-buttons"><div class="track-status">${escapeHTML(statuses[j.status]||j.status)}</div>${j.status==='draft'||j.status==='done'?`<button class="edit-track" data-edit-track="${escapeHTML(j.id||j.uid)}" data-draft="${j.status==='draft'}">Edit details</button>`:''}${j.status==='draft'?`<button class="remove-draft" data-remove-draft="${escapeHTML(j.uid)}">Remove</button>`:''}</div></div>`;
   }).join('');
   $('transfers').querySelectorAll('[data-edit-track]').forEach(button=>button.onclick=()=>openMetadata(button.dataset.editTrack,button.dataset.draft==='true'));
@@ -85,7 +85,7 @@ function addFiles(files){
   const rejected=[];
   for(const file of files){
     if(!supported.test(file.name) || !file.size || file.size>10*1024**3){rejected.push(file.name);continue;}
-    pending.push({uid:crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random(),file,name:file.name,bytes:file.size,folder:folder.name,folderId:folder.id,status:'draft',progress:0,metadata:{},inferred:inferFilename(file.name),layout:'flat'});
+    pending.push({uid:crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random(),file,name:file.name,bytes:file.size,folder:folder.name,folderId:folder.id,status:'draft',progress:0,metadata:{},inferred:inferFilename(file.name),layout:'flat',output_format:$('outputFormat').value});
   }
   banner(rejected.length?`Not added: ${rejected.join(', ')}. Choose supported audio files smaller than 10 GB. This version accepts files, not folders.`:'');
   renderTransfers();
@@ -95,7 +95,7 @@ async function pump(){
   try{for(const item of pending.filter(p=>p.status==='waiting')){
     item.status='uploading';renderTransfers();
     try{await new Promise((resolve,reject)=>{
-      const xhr=new XMLHttpRequest();xhr.open('POST',`/api/upload?folder=${encodeURIComponent(item.folderId)}&name=${encodeURIComponent(item.name)}&layout=${encodeURIComponent(item.layout||'flat')}`);xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.setRequestHeader('X-MediaDrop','1');xhr.setRequestHeader('X-MediaDrop-Tags',encodeURIComponent(JSON.stringify(item.metadata||{})));
+      const xhr=new XMLHttpRequest();xhr.open('POST',`/api/upload?folder=${encodeURIComponent(item.folderId)}&name=${encodeURIComponent(item.name)}&layout=${encodeURIComponent(item.layout||'flat')}&format=${encodeURIComponent(item.output_format||'mp3')}`);xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.setRequestHeader('X-MediaDrop','1');xhr.setRequestHeader('X-MediaDrop-Tags',encodeURIComponent(JSON.stringify(item.metadata||{})));
       xhr.upload.onprogress=e=>{if(e.lengthComputable){item.progress=Math.round(e.loaded/e.total*100);renderTransfers();}};
       xhr.onload=()=>{try{const response=JSON.parse(xhr.responseText);if(xhr.status<200||xhr.status>=300)throw new Error(response.error||'Upload failed.');item.job=response.job;item.status='queued';item.progress=0;resolve();}catch(e){reject(e);}};
       xhr.onerror=()=>reject(new Error('Connection interrupted. Please add the file again.'));xhr.onabort=()=>reject(new Error('Upload cancelled.'));xhr.send(item.file);
@@ -134,7 +134,7 @@ function previewPath(){
   let parts=[folder?.path||'Choose a music folder'];
   if(layout==='single'||layout==='album')parts.push(pathPart(primaryArtist(tags))||'[Artist]');
   if(layout==='single'||layout==='album')parts.push(pathPart(tags.album||(layout==='single'?tags.title:''))||(layout==='single'?'[Single title]':'[Album]'));
-  parts.push(editing.draft?editing.name.replace(/\.[^.]+$/,'.mp3'):editing.path.split('/').pop());
+  parts.push(editing.draft?editing.name.replace(/\.[^.]+$/,'.'+(editing.track.output_format||'mp3')):editing.path.split('/').pop());
   $('trackPath').textContent=parts.join('/');
 }
 async function openMetadata(id,draft=false){

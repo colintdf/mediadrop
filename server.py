@@ -579,7 +579,7 @@ class App:
         root = check_directory(Path(job.get('library_root', job['destination'])))
         dest = root
         self.update(job, status='checking', progress=0)
-        probe = subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'stream=codec_type,codec_name:format=duration', '-of', 'json', str(source)], capture_output=True, text=True, timeout=60)
+        probe = subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'stream=codec_type,codec_name,bits_per_raw_sample:format=duration', '-of', 'json', str(source)], capture_output=True, text=True, timeout=60)
         if probe.returncode:
             raise ValueError('This file could not be read as audio. The upload may be damaged or protected.')
         info = json.loads(probe.stdout)
@@ -587,8 +587,14 @@ class App:
         if not audio:
             raise ValueError('No audio track found.')
         duration = float(info.get('format', {}).get('duration') or 0)
-        copy = Path(job['name']).suffix.lower() == '.mp3' and audio['codec_name'] == 'mp3'
-        fd, tmp = tempfile.mkstemp(prefix='.mediadrop-', suffix='.mp3', dir=dest)
+        output_format = job.get('output_format', 'mp3')
+        if output_format not in ('mp3', 'flac'):
+            raise ValueError('Choose MP3 or FLAC output.')
+        if output_format == 'flac' and (audio['codec_name'].startswith('pcm_f') or int(audio.get('bits_per_raw_sample') or 0) > 24):
+            raise ValueError('FLAC conversion supports integer audio up to 24 bits here. Keep this higher-precision source unchanged.')
+        extension = '.' + output_format
+        copy = Path(job['name']).suffix.lower() == extension and audio['codec_name'] == output_format
+        fd, tmp = tempfile.mkstemp(prefix='.mediadrop-', suffix=extension, dir=dest)
         os.close(fd)
         temp = Path(tmp)
         try:
@@ -596,7 +602,8 @@ class App:
                 shutil.copyfile(source, temp)
             else:
                 self.update(job, status='converting')
-                cmd = ['ffmpeg', '-hide_banner', '-nostdin', '-v', 'error', '-y', '-i', str(source), '-map', '0:a:0', '-map_metadata', '0', '-vn', '-ac', '2', '-ar', '44100', '-c:a', 'libmp3lame', '-b:a', '320k', '-id3v2_version', '3', '-progress', 'pipe:1', '-nostats', str(temp)]
+                encoding = ['-c:a', 'flac', '-compression_level', '8'] if output_format == 'flac' else ['-ac', '2', '-ar', '44100', '-c:a', 'libmp3lame', '-b:a', '320k', '-id3v2_version', '3']
+                cmd = ['ffmpeg', '-hide_banner', '-nostdin', '-v', 'error', '-y', '-i', str(source), '-map', '0:a:0', '-map_metadata', '0', '-vn', *encoding, '-progress', 'pipe:1', '-nostats', str(temp)]
                 with tempfile.TemporaryFile() as log:
                     with self.lock:
                         if self.stopping.is_set():
@@ -632,7 +639,7 @@ class App:
             defaults = single_release_defaults(effective, blocked=set(overrides)) if job.get('layout') == 'single' else {}
             updates = {**inferred, **defaults, **overrides}
             if updates:
-                tag_temp = temp.with_name(temp.stem + '-tags.mp3')
+                tag_temp = temp.with_name(temp.stem + '-tags' + extension)
                 try:
                     write_tags(temp, tag_temp, updates)
                     os.replace(tag_temp, temp)
@@ -645,7 +652,7 @@ class App:
                 shutil.move(str(temp), moved)
                 temp = moved
             check_directory(dest)
-            output = publish(temp, dest, Path(job['name']).stem + '.mp3')
+            output = publish(temp, dest, Path(job['name']).stem + extension)
             self.index_path(root, output, metadata, suppressed, job.get('layout'))
             self.update(job, status='done', progress=100, output=output.name, bytes=output.stat().st_size, converted=not copy, metadata=metadata, destination=str(dest), library_root=str(root))
         finally:
@@ -653,7 +660,7 @@ class App:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = 'MediaDrop/1.5'
+    server_version = 'MediaDrop/1.6'
 
     @property
     def app(self):
@@ -681,7 +688,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         route = urlsplit(self.path).path
         if route == '/api/health':
-            return self.reply(200, {'status': 'ok', 'version': '1.5'})
+            return self.reply(200, {'status': 'ok', 'version': '1.6'})
         if route.startswith('/api/jobs/'):
             job_id = route.removeprefix('/api/jobs/')
             with self.app.lock:
@@ -837,6 +844,9 @@ class Handler(BaseHTTPRequestHandler):
             if len(encoded) > 30000:
                 raise ValueError('Metadata is too large.')
             metadata = validate_metadata(json.loads(unquote(encoded)))
+            output_format = args.get('format', ['mp3'])[0]
+            if output_format not in ('mp3', 'flac'):
+                raise ValueError('Choose MP3 or FLAC output.')
             layout = args.get('layout', ['flat'])[0]
             if layout not in ('flat', 'album', 'single'):
                 raise ValueError('Invalid folder layout.')
@@ -857,7 +867,7 @@ class Handler(BaseHTTPRequestHandler):
             if length <= 0 or length > 10 * 1024 ** 3:
                 raise ValueError('Choose a non-empty file smaller than 10 GB.')
             upload_id = self.headers.get('X-MediaDrop-Upload-ID')
-            fingerprint = hashlib.sha256(json.dumps([folder['id'], name, metadata, layout, length], sort_keys=True).encode()).hexdigest()
+            fingerprint = hashlib.sha256(json.dumps([folder['id'], name, metadata, layout, length] + ([output_format] if output_format != 'mp3' else []), sort_keys=True).encode()).hexdigest()
             if upload_id:
                 if not re.fullmatch(r'[A-Za-z0-9-]{16,80}', upload_id):
                     raise ValueError('Invalid upload identifier.')
@@ -884,6 +894,7 @@ class Handler(BaseHTTPRequestHandler):
                     stream.write(chunk)
                     remaining -= len(chunk)
             job = {'id': job_id, 'name': name, 'folder': folder['name'], 'destination': folder['path'], 'status': 'queued', 'progress': 0, 'created': time.time(), 'bytes': length, 'metadata': metadata, 'layout': layout, 'library_root': folder['path']}
+            job['output_format'] = output_format
             if upload_id:
                 job.update(client_upload_id=upload_id, upload_fingerprint=fingerprint)
             with self.app.lock:

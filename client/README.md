@@ -1,7 +1,7 @@
 # MediaDrop Ripper for Mac
 
 A native SwiftUI CD client for MediaDrop. Requires macOS 14+, an audio CD drive,
-and MediaDrop server 1.5+. The client bundles its own audio-only FFmpeg encoder,
+and MediaDrop server 1.6+. The client bundles its own audio-only FFmpeg encoder,
 LAME and libdiscid. No Python, Homebrew or Terminal is needed to run it.
 
 ## Install and use
@@ -17,7 +17,7 @@ then use System Settings > Privacy & Security > Open Anyway for this app.
 3. Pick the matching MusicBrainz edition and check album and per-track details.
    Compilation tracks may have different artists. Semicolon-separated performers
    remain intact and the album artist determines the album folder on the server.
-4. Select tracks and choose Rip & upload selected. Encoding is 320 kbps MP3.
+4. Select tracks and choose Rip & upload selected. Choose MP3 at 320 kbps (default) or lossless FLAC before queueing.
 5. If interrupted, use Retry pending. The app preserves encoded files and server
    job IDs across restarts. Reinsert the CD only for tracks not yet extracted.
 
@@ -34,8 +34,8 @@ it is **not** AccurateRip verification or secure extraction with cache defeat.
 Scratched discs, mixed-mode media and individual drives need real hardware tests.
 The app does not eject the disc automatically or alter any source file.
 
-State and cached MP3s are under `~/Library/Application Support/MediaDrop Ripper`.
-Finished MP3 caches are removed after server completion, while completion IDs are
+State and cached audio files are under `~/Library/Application Support/MediaDrop Ripper`.
+Finished audio caches are removed after server completion, while completion IDs are
 retained so the same disc/track/destination is not queued again accidentally.
 If you change metadata after queueing, the queued item keeps its original tags.
 Use the server editor to change metadata on an already uploaded track.
@@ -49,7 +49,7 @@ server first, confirm no output was published, then use Remove next to that queu
 clear the server's job history while a client has pending uploads.
 
 Stop cancels the running extraction/encoding process or network task. Partial
-encodes are discarded; completed MP3s and accepted upload IDs are kept. Keep the
+encodes are discarded; completed encodes and accepted upload IDs are kept. Keep the
 app running during work; it does not install a background agent.
 
 ## Build
@@ -70,7 +70,7 @@ signing and notarisation can be added when the owner supplies Apple credentials.
 ## Server protocol
 
 `GET /api/health` supplies the version, `/api/state` the available music folders.
-Uploads are raw MP3 bodies to `/api/upload?folder=ID&name=NAME&layout=album`, with
+Uploads are raw MP3 or FLAC bodies to `/api/upload?folder=ID&name=NAME&layout=album&format=mp3`, with
 `X-MediaDrop: 1`, percent-encoded JSON in `X-MediaDrop-Tags`, and a persistent
 `X-MediaDrop-Upload-ID`. The 202 response contains `job`; poll `/api/jobs/ID`
 until done/failed. Local HTTP is supported for the user's private LAN.
@@ -78,3 +78,8 @@ until done/failed. Local HTTP is supported for the user's private LAN.
 Each app, helper and bundled dynamic library is checked for a deployment target
 of macOS 14.0 or earlier. CI launches the Apple Silicon app on macOS 14 and the
 Intel app on macOS 15. A physical CD drive is still needed for extraction testing.
+
+Format is stored per queued track. Existing queues without a format remain MP3.
+The same CD can be queued once per destination and format. This version encodes
+one chosen format per operation; simultaneous archive/listening output is not yet
+implemented. FLAC uploads require server 1.6 to retain FLAC on the server.

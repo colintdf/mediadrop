@@ -30,3 +30,10 @@ expect(tags == item.tags,"Unicode metadata transport")
 let restored = try JSONDecoder().decode(RipItem.self,from:JSONEncoder().encode(item))
 expect(restored.token == item.token && restored.server == item.server,"Persistent retry identity")
 print("PASS: server URLs, track ordering, exact-disc metadata, per-track artists, upload headers and persistent retry IDs")
+
+var lossless = item
+lossless.outputFormat = "flac"
+let losslessRequest = try Core.uploadRequest(item:lossless)
+expect(URLComponents(url:losslessRequest.url!,resolvingAgainstBaseURL:false)!.queryItems!.contains(URLQueryItem(name:"format",value:"flac")),"FLAC reaches server")
+expect(restored.format == "mp3","Old queues retain MP3 default")
+expect(Core.filename(number:1,title:"Song",format:"flac").hasSuffix(".flac"),"FLAC extension")

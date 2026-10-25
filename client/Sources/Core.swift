@@ -31,6 +31,8 @@ struct RipItem: Identifiable, Codable {
     let folder: String
     let tags: [String: String]
     let filename: String
+    var outputFormat: String?
+    var format: String { outputFormat ?? "mp3" }
     var token = UUID().uuidString
     var job: String?
     var encoded = false
@@ -103,14 +105,14 @@ enum Core {
         }
         return result
     }
-    static func filename(number: Int, title: String) -> String {
+    static func filename(number: Int, title: String, format: String = "mp3") -> String {
         var stem = String(format: "%02d", number) + " - " + title.replacingOccurrences(of: #"[/\\:*?\"<>|]"#, with: "_", options: .regularExpression)
         while stem.utf8.count > 200 { stem.removeLast() }
-        return stem + ".mp3"
+        return stem + "." + format
     }
     static func uploadRequest(item: RipItem) throws -> URLRequest {
         var parts = URLComponents(url: item.server.appendingPathComponent("api/upload"), resolvingAgainstBaseURL: false)!
-        parts.queryItems = [URLQueryItem(name: "folder", value: item.folder), URLQueryItem(name: "name", value: item.filename), URLQueryItem(name: "layout", value: "album")]
+        parts.queryItems = [URLQueryItem(name: "folder", value: item.folder), URLQueryItem(name: "name", value: item.filename), URLQueryItem(name: "layout", value: "album"), URLQueryItem(name: "format", value: item.format)]
         var request = URLRequest(url: parts.url!)
         request.httpMethod = "POST"
         request.timeoutInterval = 1800

@@ -12,6 +12,7 @@ final class RipperModel: ObservableObject {
     @Published var artist = ""
     @Published var date = ""
     @Published var genre = ""
+    @Published var outputFormat = "mp3"
     @Published var discNumber = "1"
     @Published var choices: [ReleaseChoice] = []
     @Published var release = ""
@@ -72,7 +73,7 @@ final class RipperModel: ObservableObject {
         let (health, response) = try await session.data(from: base.appendingPathComponent("api/health"))
         let info = try JSONSerialization.jsonObject(with: checked(health, response)) as? [String: Any] ?? [:]
         let version = info["version"] as? String ?? "0"
-        guard version.compare("1.5", options: .numeric) != .orderedAscending else { throw RipError("Update the MediaDrop server to version 1.5 or later before using the ripper.") }
+        guard version.compare("1.6", options: .numeric) != .orderedAscending else { throw RipError("Update the MediaDrop server to version 1.6 or later before using the ripper.") }
         let (data, reply) = try await session.data(from: base.appendingPathComponent("api/state"))
         let state = try JSONDecoder().decode(ServerState.self, from: checked(data, reply))
         folders = state.folders.filter { $0.type == "music" && $0.available }
@@ -164,15 +165,15 @@ final class RipperModel: ObservableObject {
         for track in selected {
             // A disc/track/destination is queued once. Completed copies are kept
             // in the manifest to prevent accidental duplicate albums next time.
-            if self.queue.contains(where: { $0.disc == self.discKey && $0.number == track.id && $0.server == base && $0.folder == self.folder }) { continue }
+            if self.queue.contains(where: { $0.disc == self.discKey && $0.number == track.id && $0.server == base && $0.folder == self.folder && $0.format == self.outputFormat }) { continue }
             let tags = ["title":track.title,"artist":track.artist.isEmpty ? self.artist : track.artist,"album":self.album,"album_artist":self.artist,"track":String(track.id),"disc":self.discNumber,"date":self.date,"genre":self.genre]
-            let filename = Core.filename(number:track.id,title:track.title)
-            self.queue.append(RipItem(disc:self.discKey,source:track.source,number:track.id,server:base,folder:self.folder,tags:tags,filename:filename))
+            let filename = Core.filename(number:track.id,title:track.title,format:self.outputFormat)
+            self.queue.append(RipItem(disc:self.discKey,source:track.source,number:track.id,server:base,folder:self.folder,tags:tags,filename:filename,outputFormat:self.outputFormat))
         }
         try self.save(); try await self.processQueue()
     } }
     func retry() { perform { try await self.processQueue() } }
-    private func encodedURL(_ item: RipItem) -> URL { storage.appendingPathComponent(item.id + ".mp3") }
+    private func encodedURL(_ item: RipItem) -> URL { storage.appendingPathComponent(item.id + "." + item.format) }
     private func processQueue() async throws {
         let pending = queue.indices.filter { queue[$0].status != "Complete" }
         guard !pending.isEmpty else { message = "These tracks have already been uploaded to this destination."; return }
@@ -198,10 +199,11 @@ final class RipperModel: ObservableObject {
                             _ = try await runner.run(URL(fileURLWithPath: "/bin/cp"), [queue[index].source.path, second.path])
                             _ = try await runner.run(URL(fileURLWithPath: "/usr/bin/cmp"), [local.path,second.path])
                         }
-                        try checkStop(); queue[index].status = "Encoding 320 kbps"
-                        let temporary = storage.appendingPathComponent(queue[index].id + "-partial.mp3")
+                        try checkStop(); queue[index].status = queue[index].format == "flac" ? "Encoding FLAC" : "Encoding 320 kbps"
+                        let temporary = storage.appendingPathComponent(queue[index].id + "-partial." + queue[index].format)
                         defer { try? FileManager.default.removeItem(at: temporary) }
-                        var args = ["-hide_banner","-nostdin","-v","error","-y","-i",local.path,"-map","0:a:0","-vn","-ac","2","-ar","44100","-c:a","libmp3lame","-b:a","320k","-id3v2_version","3"]
+                        var args = ["-hide_banner","-nostdin","-v","error","-y","-i",local.path,"-map","0:a:0","-vn"]
+                        args += queue[index].format == "flac" ? ["-c:a","flac","-compression_level","8"] : ["-ac","2","-ar","44100","-c:a","libmp3lame","-b:a","320k","-id3v2_version","3"]
                         for (key,value) in queue[index].tags.sorted(by: { $0.key < $1.key }) { args += ["-metadata","\(key)=\(value)"] }
                         args.append(temporary.path)
                         _ = try await runner.run(try tool("ffmpeg"),args)

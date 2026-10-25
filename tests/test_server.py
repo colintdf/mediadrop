@@ -268,7 +268,7 @@ class Integration(unittest.TestCase):
     def test_healthcheck_is_public_and_contains_no_settings(self):
         code,health = self.request('/api/health')
         self.assertEqual(code,200)
-        self.assertEqual(health,{'status':'ok','version':'1.5'})
+        self.assertEqual(health,{'status':'ok','version':'1.6'})
         self.assertEqual(self.request('/api/state')[0],200)
 
     def test_container_data_environment_and_sigterm_shutdown(self):
