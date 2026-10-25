@@ -37,8 +37,9 @@ function renderFolders(){
 function renderTransfers(){
   // As soon as a server job is seen, it replaces its browser upload row.
   const ids=new Set(state.jobs.map(j=>j.id)); pending=pending.filter(p=>!p.job || !ids.has(p.job));
-  const rows=[...pending.slice().reverse(),...state.jobs.slice().reverse()];
-  const active=rows.filter(j=>!['done','failed','draft'].includes(j.status)).length;
+  const allRows=[...pending.slice().reverse(),...state.jobs.slice().reverse()];
+  const rows=allRows.slice(0,10);
+  const active=allRows.filter(j=>!['done','failed','draft'].includes(j.status)).length;
   $('uploadStaged').hidden=!pending.some(j=>j.status==='draft');
   $('uploadStaged').textContent=`Upload staged tracks (${pending.filter(j=>j.status==='draft').length})`;
   $('queueCount').textContent=rows.length; $('queueSummary').textContent=active?`${active} IN PROGRESS`:'ALL CAUGHT UP';
