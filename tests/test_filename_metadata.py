@@ -1,3 +1,4 @@
+import http.client
 import json
 import time
 from urllib.parse import urlencode
@@ -27,6 +28,32 @@ class FilenameTests(unittest.TestCase):
 # Only define new integration tests on a harness subclass whose inherited tests
 # are excluded from discovery below.
 class NewBehaviour(test_server.Integration):
+    def test_upload_retry_token_and_job_persist(self):
+        folder=self.folder()
+        payload=self.wav()
+        token='client-test-upload-123456'
+        def upload(name='Artist - Song.wav'):
+            client=http.client.HTTPConnection('127.0.0.1',self.port,timeout=10)
+            path='/api/upload?'+urlencode({'folder':folder,'name':name})
+            client.request('POST',path,payload,{'X-MediaDrop':'1','X-MediaDrop-Upload-ID':token})
+            response=client.getresponse()
+            result=response.status,json.loads(response.read())
+            client.close()
+            return result
+        code, first=upload()
+        self.assertEqual(code,202)
+        self.app.queue.join()
+        self.assertEqual(upload()[1]['job'],first['job'])
+        self.assertEqual(len(self.app.jobs),1)
+        self.assertEqual(upload('Different.wav')[0],400)
+        self.assertEqual(self.request('/api/jobs/'+first['job'])[1]['status'],'done')
+        self.assertEqual(self.request('/api/jobs/missing')[0],404)
+        self.app.stop()
+        self.app=test_server.App(self.root/'data')
+        self.http.app=self.app
+        self.assertEqual(upload()[1]['job'],first['job'])
+        self.assertEqual(len(list(self.dest.glob('*.mp3'))),1)
+
     def test_single_folder_and_explicit_clear(self):
         folder=self.folder()
         url='/api/upload?'+urlencode({'folder':folder,'name':'Artist - Song.wav','layout':'single'})

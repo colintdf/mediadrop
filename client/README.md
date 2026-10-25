@@ -45,8 +45,7 @@ repeated token and refuses reuse with a different request. It retains these IDs
 in its jobs file, so keep the server's persistent data volume. This prevents
 network retries creating duplicates; it is not an audio fingerprint deduplicator.
 A server-failed job stays attached to its queue entry for inspection. Fix the
-server first, confirm no output was published, then remove that entry from
-`queue.json` with the app closed before deliberately ripping it again. Do not
+server first, confirm no output was published, then use Remove next to that queue entry before deliberately ripping it again. Do not
 clear the server's job history while a client has pending uploads.
 
 Stop cancels the running extraction/encoding process or network task. Partial

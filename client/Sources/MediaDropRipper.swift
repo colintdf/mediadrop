@@ -119,7 +119,11 @@ struct RipperView: View {
                                     Text("\(item.tags["artist"] ?? "") · \(item.tags["album"] ?? "")").font(.caption).foregroundStyle(.secondary)
                                     if !item.error.isEmpty { Text(item.error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
                                 }
-                                Spacer(); Text(item.status).font(.caption).foregroundStyle(.secondary)
+                                Spacer()
+                                VStack(alignment:.trailing,spacing:5) {
+                                    Text(item.status).font(.caption).foregroundStyle(.secondary)
+                                    if item.status != "Complete" { Button("Remove…") { model.forget(item.id) }.buttonStyle(.link).disabled(model.busy) }
+                                }
                             }.padding(.vertical,6)
                         }
                     }

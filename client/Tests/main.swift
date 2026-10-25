@@ -5,6 +5,8 @@ func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
 }
 let base = try Core.serverURL("http://192.168.0.111:12345")
 expect(base.host == "192.168.0.111", "Server URL")
+let trailing = try Core.serverURL("http://192.168.0.111:12345/")
+expect(trailing == base,"Canonical server address prevents duplicate queues")
 for invalid in ["file:///etc/passwd","http://user:pass@localhost:12345","http://host/path","http://host?token=a"] {
     do { _ = try Core.serverURL(invalid); fatalError("Invalid URL accepted") } catch {}
 }

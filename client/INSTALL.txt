@@ -23,7 +23,7 @@ Completed tracks are remembered per disc and destination to prevent duplicates.
 Saved progress lives in ~/Library/Application Support/MediaDrop Ripper.
 If a server job fails, fix the server issue first; the app preserves that job
 rather than automatically making another copy. Check the server before manually
-removing its queue entry from queue.json while the app is closed.
+using Remove next to its pending queue entry in the app.
 
 The optional second-read comparison is not AccurateRip or secure-ripping
 verification. Scratched discs and physical drive compatibility require checking

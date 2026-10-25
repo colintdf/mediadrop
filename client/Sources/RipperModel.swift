@@ -235,6 +235,19 @@ final class RipperModel: ObservableObject {
         progress = 1
         message = failures == 0 ? "Finished. Your music is in MediaDrop." : "\(failures) track(s) need attention. Fix the issue and choose Retry pending."
     }
+    func forget(_ id: String) {
+        guard !busy, let index = queue.firstIndex(where: { $0.id == id && $0.status != "Complete" }) else { return }
+        let alert = NSAlert()
+        alert.messageText = "Remove this pending track?"
+        alert.informativeText = "Check MediaDrop first: an accepted upload may already exist on the server. Removing this queue entry lets you deliberately rip it again and could create a duplicate."
+        alert.addButton(withTitle:"Keep track"); alert.addButton(withTitle:"Remove from queue")
+        guard alert.runModal() == .alertSecondButtonReturn else { return }
+        let old = queue
+        let file = encodedURL(queue[index])
+        queue.remove(at:index)
+        do { try save(); try? FileManager.default.removeItem(at:file) }
+        catch { queue = old; self.error = error.localizedDescription }
+    }
     func clearCompleted() {
         // Keep completion identities on disk: clearing a visual list must not
         // silently disable duplicate protection. The list hides these by default.

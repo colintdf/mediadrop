@@ -50,13 +50,15 @@ struct ReleaseChoice: Identifiable {
 
 enum Core {
     static func serverURL(_ text: String) throws -> URL {
-        guard let parts = URLComponents(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
+        guard var parts = URLComponents(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
               ["http", "https"].contains(parts.scheme?.lowercased() ?? ""),
               parts.host != nil, parts.user == nil, parts.password == nil,
               parts.query == nil, parts.fragment == nil,
-              parts.path.isEmpty || parts.path == "/", let url = parts.url else {
+              parts.path.isEmpty || parts.path == "/" else {
             throw RipError("Enter your server address, for example http://192.168.0.111:12345")
         }
+        parts.path = ""
+        guard let url = parts.url else { throw RipError("Invalid server address.") }
         return url
     }
     static func key(_ text: String) -> String {

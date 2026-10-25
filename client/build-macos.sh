@@ -34,6 +34,8 @@ clang client/discid.c -I"$DISCID/include" -L"$DISCID/lib" -ldiscid \
 swiftc -swift-version 5 -O -parse-as-library client/Sources/*.swift \
   -framework SwiftUI -framework AppKit -o "$APP/Contents/MacOS/MediaDropRipper"
 python3 client/bundle_libraries.py "$APP"
+swift client/make-icon.swift "$BUILD/AppIcon.iconset"
+iconutil -c icns "$BUILD/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
 # Bundle exact upstream source archives and the build recipe alongside the LGPL
 # binaries, so rebuilding/replacing them does not depend on an online promise.
 cp "$BUILD/ffmpeg-8.0.1.tar.xz" "$SOURCES/"
@@ -53,6 +55,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleIdentifier</key><string>com.croftsoft.mediadrop.ripper</string>
 <key>CFBundleName</key><string>MediaDrop Ripper</string>
 <key>CFBundleDisplayName</key><string>MediaDrop Ripper</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>1.0.0</string>
 <key>CFBundleVersion</key><string>1</string>
@@ -77,6 +80,11 @@ PATH=/usr/bin:/bin "$TOOLS/ffmpeg" -v error -y -i "$BUILD/test.wav" -c:a libmp3l
 test -s "$BUILD/test.mp3"
 swiftc -swift-version 5 client/Sources/Core.swift client/Tests/main.swift -o "$BUILD/core-tests"
 "$BUILD/core-tests"
+# Launch the packaged app on the build Mac to catch missing runtime resources.
+open -a "$APP"
+sleep 3
+pgrep -f "$APP/Contents/MacOS/MediaDropRipper" >/dev/null
+pkill -f "$APP/Contents/MacOS/MediaDropRipper"
 # Create a conventional drag-to-Applications disk image.
 STAGE="$BUILD/dmg"
 mkdir -p "$STAGE"
