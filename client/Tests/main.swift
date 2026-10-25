@@ -43,3 +43,10 @@ expect(Core.discDevices("/dev/rdisk7") == ["/dev/rdisk7","/dev/disk7"],"Raw path
 expect(Core.discDevices("/Volumes/Audio CD").isEmpty,"Never fall back to an unrelated drive")
 expect(Core.validDiscID("49HHV7Eb8UKF3aQiNmu1GR8vKTY-"),"Valid MusicBrainz ID")
 expect(!Core.validDiscID("error: no disc"),"Reject diagnostic text as ID")
+
+let lookup = URLComponents(url: Core.discLookupURL("49HHV7Eb8UKF3aQiNmu1GR8vKTY-"), resolvingAgainstBaseURL: false)!
+expect(lookup.path == "/ws/2/discid/49HHV7Eb8UKF3aQiNmu1GR8vKTY-", "Disc lookup resource")
+let includes = lookup.queryItems!.first(where: { $0.name == "inc" })!.value!.split(separator: "+")
+expect(includes.contains("releases") && includes.contains("discids"), "Disc IDs require explicit releases")
+expect(includes.contains("recordings") && includes.contains("artist-credits"), "Keep track metadata")
+expect(lookup.queryItems!.contains(URLQueryItem(name: "cdstubs", value: "no")), "Exclude CD stubs")

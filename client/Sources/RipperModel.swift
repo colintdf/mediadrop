@@ -156,9 +156,7 @@ final class RipperModel: ObservableObject {
         let delay = 1.1 - Date().timeIntervalSince(lastLookup)
         if delay > 0 { try await Task.sleep(nanoseconds:UInt64(delay * 1_000_000_000)) }
         try checkStop(); lastLookup = Date()
-        var parts = URLComponents(string: "https://musicbrainz.org/ws/2/discid/\(discID)")!
-        parts.queryItems = [URLQueryItem(name: "fmt", value: "json"), URLQueryItem(name: "inc", value: "recordings+artist-credits+discids"), URLQueryItem(name: "cdstubs", value: "no")]
-        var request = URLRequest(url: parts.url!); request.setValue("MediaDrop-Ripper/1.0 (https://github.com/colintdf/mediadrop)", forHTTPHeaderField: "User-Agent")
+        var request = URLRequest(url: Core.discLookupURL(discID)); request.setValue("MediaDrop-Ripper/1.0 (https://github.com/colintdf/mediadrop)", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await session.data(for: request)
         guard (response as? HTTPURLResponse)?.statusCode != 404 else { message = "This disc is not in MusicBrainz. Enter its details below."; return }
         choices = try Core.releases(checked(data, response), discID: discID, trackCount: tracks.count)
