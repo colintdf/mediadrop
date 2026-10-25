@@ -1,4 +1,4 @@
-# MediaDrop 1.4
+# MediaDrop 1.5
 
 A private music inbox for your media centre Mac, with a responsive web interface on port **12345**. Upload from a browser on the Mac or another device on the same home network.
 
@@ -46,11 +46,11 @@ Drop or browse files to stage them. They do not upload until you click **Upload 
 
 Choose where a track belongs, with a destination path preview:
 
-- **Single:** `Music/Artist/track.mp3`
+- **Single:** `Music/Artist/Release/track.mp3`
 - **Album:** `Music/Artist/Album/track.mp3`
 - **Directly in selected music folder:** keep the original upload behaviour.
 
-There are no extra `Albums` or `Singles` folders. The first album artist is used for the artist folder when supplied, otherwise the first track artist is used. A semicolon-separated artist list never becomes one combined folder name for newly organised tracks. Singles have no release subfolder, even if they have an album tag. Album tracks require an album name. Filename characters unsuitable for folders are replaced with underscores. Existing names receive a number rather than being overwritten. Files retain their original filenames, with an MP3 extension for converted uploads.
+There are no extra `Albums` or `Singles` folders. The first album artist is used for the artist folder when supplied, otherwise the first track artist is used. A semicolon-separated artist list never becomes one combined folder name for newly organised tracks. Singles now have a release subfolder for Plex compatibility. An existing album tag supplies its name; otherwise the track title is used. Missing album, album artist and track tags default to the single title, primary artist and 1 when explicitly organising a single. Existing nonempty tags are preserved. Album tracks require an album name. Filename characters unsuitable for folders are replaced with underscores. Existing names receive a number rather than being overwritten. Files retain their original filenames, with an MP3 extension for converted uploads.
 
 After uploading, use **Edit details** on the completed transfer or in **Your music library**. The editor reads the current tags from the actual file. Save tags in place or select a music destination and Single/Album layout to move the track. Clearing a field removes that tag. A file changed by another application while the editor was open must be reopened before saving. Existing files are never automatically reorganised by a scan or a tag change; choose a layout to move them.
 
@@ -60,7 +60,7 @@ After uploading, use **Edit details** on the completed transfer or in **Your mus
 
 A scan runs at server startup and after adding a destination. Use **Scan folders** after adding, removing or changing files outside MediaDrop. The index caches unchanged files so repeat scans are quicker. New uploads and edits through MediaDrop update the index immediately. Large first scans can take time; the progress count is shown in the interface. Keep your media drives mounted. Hidden files and symbolic links are skipped. Removing a destination hides its indexed tracks without deleting the actual music.
 
-Under the standard music-root layout, files directly in an artist folder are listed as singles and files inside its album subfolders are listed as album tracks. This display classification is based on the path; the actual tags remain editable.
+Under the standard music-root layout, files directly in an artist folder are listed as singles and files inside its album subfolders are listed as album tracks. New uploads and explicit moves retain the selected single/album classification, including singles inside release folders. Previously imported subfolders are still classified as albums. The actual tags remain editable.
 
 Existing supported audio formats are indexed. Metadata editing uses FFmpeg stream copy to preserve the existing audio format and quality. Some formats cannot represent every tag: if a requested tag cannot be stored, MediaDrop rejects the change and retains the original file. MP3 has full support for the fields in this editor. Other tags and artwork are retained where FFmpeg supports them; unusual vendor-specific metadata may not survive a rewrite. Converted uploads still omit embedded artwork in this version.
 
@@ -80,7 +80,7 @@ Set **Album artist** to `Gorillaz` to keep the album together, even when differe
 - Guest artist tiles show the release as **Appears on**, including only the tracks on which that guest is credited.
 - Album artwork for an appearance is matched against the release's primary artist, not the guest's name.
 - Two appearances on different artists' albums with the same title stay distinct.
-- Newly organised uploads and explicit moves use `Primary Artist/Album/track.mp3`, or `Primary Artist/track.mp3` for a single.
+- Newly organised uploads and explicit moves use `Primary Artist/Album/track.mp3`, or `Primary Artist/Release/track.mp3` for a single.
 
 Existing tags and files are not rewritten or moved by scanning or browsing. The updated grouping takes effect after restarting the app and refreshing the browser; you do not need to re-upload your music. Artist-wide bulk edits include guest appearances shown for that artist. Changing the track-artist field explicitly replaces its complete semicolon-separated credit list, while unchecked fields remain untouched.
 
@@ -170,3 +170,33 @@ python3 -m unittest discover -s tests -v
 ```
 
 Integration checks exercise 320 kbps WAV-to-MP3 conversion, pre-upload tags, byte-for-byte MP3 copying, audio-preserving metadata edits and moves, album/single layouts, existing-file indexing and search, deleted-file rescans, conflict protection, duplicate handling, password-free access, origin checks, destination validation, symlink rejection and interrupted-job recovery. FFmpeg and FFprobe must be on PATH. Additional checks cover safe bulk edits, single/album-name protection, preflight conflicts, artist/release pagination, and read-only Plex/Lidarr artwork lookups against simulated provider responses. Live access to your own Plex/Lidarr instance still needs to be checked after configuration.
+
+## Missing tags and Plex single folders
+
+If artist or title tags are empty, MediaDrop suggests them from filenames such as
+`01 - Artist - Song.wav`. Existing tags always win. A filename without a clear
+artist separator supplies only a title. Suggestions do not guess album, year or
+genre. Explicitly clearing an artist/title in the editor suppresses that guess.
+
+New uploads save missing filename-derived tags. Existing library scans display
+suggestions without changing the audio files. Open Edit details and Save to write
+them, or explicitly select **Fill missing artist/title from each filename** in
+the bulk editor. Each track gets its own inferred title. Ordinary shared-field
+bulk edits still write only the selected fields.
+
+Singles now use `Artist/Release/track.mp3`, without a separate Singles category.
+Existing files are not automatically moved. To move an old single, open Edit
+details, select Single and its destination, then Save. After reorganising, use
+Scan Library Files in Plex. Moving a file may affect existing Plex references.
+
+## Mac CD Ripper
+
+The native companion app lives in [client](client/README.md). It requires macOS
+15 or later and a connected audio CD drive. Download the matching Apple Silicon
+or Intel DMG from the latest successful **Mac CD client** Actions run. The app
+includes its encoder and disc ID helper, with no Terminal setup or Homebrew on
+the user's Mac. It connects to MediaDrop 1.5 or later over the local network.
+
+The build checks compile the app, test metadata and request handling, run the
+bundled encoder and verify the app signature. Physical CD reading, drive support
+and macOS permission prompts still need checking on a real Mac with a CD drive.

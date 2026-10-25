@@ -1,0 +1,26 @@
+name: Mac CD client
+on:
+  push:
+    branches: [main]
+    paths: ['client/**', '.github/workflows/macos-client.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build, test and package native client
+        run: bash client/build-macos.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MediaDrop-Ripper-${{ runner.arch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30

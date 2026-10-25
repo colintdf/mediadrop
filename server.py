@@ -19,6 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit, parse_qs, unquote
 from artwork import Artwork, validate_settings
 from artists import primary_artist, credited_artists, split_artists
+from filename_metadata import metadata_from_filename
 
 AUDIO = {'.mp3', '.wav', '.wave', '.flac', '.m4a', '.aac', '.ogg', '.opus', '.aif', '.aiff', '.wma'}
 ROOT = Path(__file__).resolve().parent
@@ -96,6 +97,12 @@ def folder_part(value):
     return value
 
 
+def single_release_defaults(tags, blocked=()):
+    candidates = {'album': tags.get('title', ''), 'album_artist': primary_artist(tags), 'track': '1'}
+    return {key: value for key, value in candidates.items()
+            if value and key not in blocked and not str(tags.get(key) or '').strip()}
+
+
 def organised_folder(root, tags, layout):
     root = check_directory(Path(root))
     if layout == 'flat':
@@ -103,12 +110,11 @@ def organised_folder(root, tags, layout):
     if layout not in ('album', 'single'):
         raise ValueError('Choose original folder, album or single.')
     artist = primary_artist(tags)
-    release = tags.get('album')
-    if not artist or (layout == 'album' and not release):
-        raise ValueError('Enter an artist, and an album name for an album track, to organise this track.')
+    release = tags.get('album') or (tags.get('title') if layout == 'single' else '')
+    if not artist or not release:
+        raise ValueError('Enter an artist and release name (album name or single title) to organise this track.')
     target = root / folder_part(artist)
-    if layout == 'album':
-        target = target / folder_part(release)
+    target = target / folder_part(release)
     # Refuse symlink routes outside the selected library.
     if not target.resolve().is_relative_to(root.resolve()):
         raise ValueError('The destination points outside the selected music folder.')
@@ -219,6 +225,7 @@ class App:
         self.scan_state = {'running': False, 'scanned': 0, 'errors': 0}
         self.library = json.loads((self.data / 'library.json').read_text()) if (self.data / 'library.json').exists() else {}
         self.upload_slots = threading.BoundedSemaphore(3)
+        self.active_uploads = set()
         self.queue = queue.Queue()
         self.stopping = threading.Event()
         self.process = None
@@ -265,16 +272,21 @@ class App:
         check_directory(Path(folder['path']))
         return folder
 
-    def library_record(self, root_id, root, path, tags=None):
+    def library_record(self, root_id, root, path, tags=None, suppressed=None, layout=None):
         relative = str(path.relative_to(root))
         key = 'lib_' + hashlib.sha256((str(root) + '/' + relative).encode()).hexdigest()
         stat = path.stat()
         previous = self.library.get(key, {})
         fresh = previous.get('size') == stat.st_size and previous.get('modified') == stat.st_mtime_ns
-        metadata = tags if tags is not None else previous['metadata'] if fresh else read_tags(path)
+        raw = tags if tags is not None else previous.get('file_metadata', previous['metadata']) if fresh else read_tags(path)
+        suppressed = sorted(set(previous.get('suppressed_inference', []) if suppressed is None else suppressed))
+        metadata, inferred = metadata_from_filename(path.name, raw, blocked=suppressed)
+        release_type = layout if layout in ('single','album') else previous.get('release_type')
         return {'id': key, 'folder_id': root_id, 'relative': relative, 'name': path.name,
                 'size': stat.st_size, 'modified': stat.st_mtime_ns, 'metadata': metadata,
-                'layout': 'album' if len(Path(relative).parts) >= 3 else 'single', 'indexed_at': time.time()}
+                'file_metadata': raw, 'inferred': inferred, 'suppressed_inference': suppressed,
+                'layout': release_type or ('album' if len(Path(relative).parts) >= 3 else 'single'),
+                'release_type': release_type, 'indexed_at': time.time()}
 
     def scan(self):
         if not self.scan_lock.acquire(blocking=False):
@@ -325,11 +337,11 @@ class App:
         threading.Thread(target=run, daemon=True).start()
         return True
 
-    def index_path(self, root, path, tags):
+    def index_path(self, root, path, tags, suppressed=None, layout=None):
         with self.lock:
             folder = next((f for f in self.config['folders'] if f['path'] == str(root) and f['type'] == 'music'), None)
             if folder:
-                record = self.library_record(folder['id'], root, path, tags)
+                record = self.library_record(folder['id'], root, path, tags, suppressed, layout)
                 self.library[record['id']] = record
                 atomic_json(self.data / 'library.json', self.library)
 
@@ -358,7 +370,16 @@ class App:
             raise ValueError('Track unavailable. Check that it has not been moved or deleted.')
         return job, path
 
-    def edit_metadata(self, value):
+    def read_metadata(self, job, path):
+        root = Path(job.get('library_root', job['destination']))
+        key = 'lib_' + hashlib.sha256((str(root) + '/' + str(path.relative_to(root))).encode()).hexdigest()
+        with self.lock:
+            suppressed = list(self.library.get(key, {}).get('suppressed_inference', []))
+        raw = read_tags(path)
+        metadata, inferred = metadata_from_filename(path.name, raw, blocked=suppressed)
+        return {'metadata': metadata, 'file_metadata': raw, 'inferred': inferred, 'suppressed_inference': suppressed}
+
+    def edit_metadata(self, value, infer_missing=True):
         tags = validate_metadata(value.get('metadata', {}))
         with self.tag_lock:
             job, path = self.track(value.get('id'))
@@ -367,8 +388,22 @@ class App:
             current = revision(path)
             if current != value.get('revision'):
                 raise ValueError('This file changed since you opened it. Close and reopen the editor.')
-            merged = {**read_tags(path), **tags}
+            details = self.read_metadata(job, path)
+            suppressed = set(details['suppressed_inference'])
+            for key, text in tags.items():
+                if key in ('artist', 'title'):
+                    if text:
+                        suppressed.discard(key)
+                    else:
+                        suppressed.add(key)
+            merged, inferred = metadata_from_filename(path.name, {**details['file_metadata'], **tags}, blocked=suppressed | set(tags))
+            updates = {**(inferred if infer_missing else {}), **tags}
+            validate_metadata(updates)
             layout = value.get('layout', 'keep')
+            if layout == 'single':
+                defaults = single_release_defaults(merged, blocked=set(tags))
+                merged.update(defaults)
+                updates.update(defaults)
             if layout == 'keep':
                 destination = path.parent
                 root = Path(job.get('library_root', job['destination']))
@@ -379,9 +414,12 @@ class App:
             os.close(fd)
             temp = Path(tmp)
             try:
-                write_tags(path, temp, tags)
+                if updates:
+                    write_tags(path, temp, updates)
+                else:
+                    shutil.copyfile(path, temp)
                 actual = read_tags(temp)
-                if any(actual.get(k, '') != v for k, v in tags.items()):
+                if any(actual.get(k, '') != v for k, v in updates.items()):
                     raise ValueError('This audio format could not store every requested tag. The original file has been kept. Convert to MP3 for full tag support.')
                 if revision(path) != current:
                     raise ValueError('The file changed while saving. Reopen the editor and try again.')
@@ -398,19 +436,20 @@ class App:
                         raise ValueError('Could not remove the old copy. The original track has been kept.')
                 if not job['id'].startswith('lib_'):
                     self.update(job, destination=str(destination), library_root=str(root), output=output.name,
-                            metadata=merged, bytes=output.stat().st_size,
+                            metadata=actual, bytes=output.stat().st_size,
                             layout=job.get('layout', 'flat') if layout == 'keep' else layout)
                 with self.lock:
                     self.library.pop(original_key, None)
                     atomic_json(self.data / 'library.json', self.library)
-                self.index_path(root, output, actual)
+                self.index_path(root, output, actual, suppressed, job.get('layout') if layout == 'keep' else layout)
                 # Keep upload-history entries in sync when editing through the library.
                 with self.lock:
                     for item in self.jobs:
                         if item.get('status') == 'done' and Path(item['destination']) / item.get('output', '') == path:
                             item.update(destination=str(destination), output=output.name, library_root=str(root), metadata=actual, bytes=output.stat().st_size)
                     self.save_jobs()
-                return {'metadata': actual, 'revision': revision(output), 'path': str(output)}
+                effective, hints = metadata_from_filename(output.name, actual, blocked=suppressed)
+                return {'metadata': effective, 'inferred': hints, 'revision': revision(output), 'path': str(output)}
             finally:
                 temp.unlink(missing_ok=True)
 
@@ -444,12 +483,13 @@ class App:
                 if path.resolve() in paths:
                     continue
                 paths.add(path.resolve())
-                tags = read_tags(path)
+                details = self.read_metadata(job, path)
+                tags = details['metadata']
                 with self.lock:
                     record = self.library[track_id]
                 artist, _, release, _ = library_identity({**record, 'metadata': tags})
                 identities.append((record['layout'], artist.casefold(), release.casefold()))
-                files.append({'id': track_id, 'revision': revision(path), 'name': path.name, 'metadata': tags})
+                files.append({'id': track_id, 'revision': revision(path), 'name': path.name, 'metadata': tags, 'inferred': details['inferred']})
         allow_album = all(i[0] == 'album' for i in identities) and len(set(identities)) == 1
         allowed = ['artist', 'album_artist', 'genre', 'date'] + (['album'] if allow_album else [])
         common = {k: files[0]['metadata'].get(k, '') if len({f['metadata'].get(k, '') for f in files}) == 1 else None for k in allowed}
@@ -460,15 +500,17 @@ class App:
             self.bulk_plans[plan_id] = {'id': plan_id, 'created': now, 'files': files, 'allowed': allowed,
                                       'status': 'ready', 'completed': 0, 'results': [], 'error': ''}
         return {'id': plan_id, 'count': len(files), 'common': common, 'allowed': allowed,
-                'allow_album': allow_album, 'names': [f['name'] for f in files]}
+                'allow_album': allow_album, 'names': [f['name'] for f in files],
+                'inferred_count': sum(bool(f['inferred']) for f in files)}
 
     def start_bulk(self, value):
         changes = validate_metadata(value.get('metadata', {}))
+        fill_missing = value.get('fill_missing_from_filename') is True
         with self.lock:
             plan = self.bulk_plans.get(value.get('id'))
             if not plan or plan['status'] != 'ready' or plan['created'] < time.time() - 900:
                 raise ValueError('This bulk edit has expired or already started. Select the tracks again.')
-            if not changes or any(k not in plan['allowed'] for k in changes):
+            if (not changes and not fill_missing) or any(k not in plan['allowed'] for k in changes):
                 raise ValueError('Choose only permitted shared metadata fields. Titles, track numbers and single names cannot be bulk changed.')
             plan['status'] = 'running'
         def run():
@@ -483,7 +525,7 @@ class App:
                         if self.stopping.is_set():
                             raise ValueError('Server stopped. Completed files were saved; unprocessed files are unchanged.')
                         try:
-                            self.edit_metadata({'id': item['id'], 'revision': item['revision'], 'metadata': changes, 'layout': 'keep'})
+                            self.edit_metadata({'id': item['id'], 'revision': item['revision'], 'metadata': changes, 'layout': 'keep'}, infer_missing=fill_missing)
                             result = {'name': item['name'], 'ok': True}
                         except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
                             result = {'name': item['name'], 'ok': False, 'error': str(exc)}
@@ -585,10 +627,14 @@ class App:
                         with self.lock:
                             self.process = None
             overrides = validate_metadata(job.get('metadata', {}))
-            if overrides:
+            suppressed = {k for k,v in overrides.items() if k in ('artist','title') and not v}
+            effective, inferred = metadata_from_filename(job['name'], {**read_tags(temp), **overrides}, blocked=set(overrides))
+            defaults = single_release_defaults(effective, blocked=set(overrides)) if job.get('layout') == 'single' else {}
+            updates = {**inferred, **defaults, **overrides}
+            if updates:
                 tag_temp = temp.with_name(temp.stem + '-tags.mp3')
                 try:
-                    write_tags(temp, tag_temp, overrides)
+                    write_tags(temp, tag_temp, updates)
                     os.replace(tag_temp, temp)
                 finally:
                     tag_temp.unlink(missing_ok=True)
@@ -600,14 +646,14 @@ class App:
                 temp = moved
             check_directory(dest)
             output = publish(temp, dest, Path(job['name']).stem + '.mp3')
-            self.index_path(root, output, metadata)
+            self.index_path(root, output, metadata, suppressed, job.get('layout'))
             self.update(job, status='done', progress=100, output=output.name, bytes=output.stat().st_size, converted=not copy, metadata=metadata, destination=str(dest), library_root=str(root))
         finally:
             temp.unlink(missing_ok=True)
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = 'MediaDrop/1.4'
+    server_version = 'MediaDrop/1.5'
 
     @property
     def app(self):
@@ -635,7 +681,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         route = urlsplit(self.path).path
         if route == '/api/health':
-            return self.reply(200, {'status': 'ok', 'version': '1.4'})
+            return self.reply(200, {'status': 'ok', 'version': '1.5'})
+        if route.startswith('/api/jobs/'):
+            job_id = route.removeprefix('/api/jobs/')
+            with self.app.lock:
+                job = next((j for j in self.app.jobs if j['id'] == job_id), None)
+                result = {k: job[k] for k in ('id', 'status', 'progress', 'error') if k in job} if job else None
+            return self.reply(200, result) if result else self.reply(404, {'error': 'Upload job not found. Check the server before uploading again.'})
         if route == '/api/state':
             with self.app.lock:
                 folders = [dict(f, available=Path(f['path']).is_dir()) for f in self.app.config['folders']]
@@ -743,7 +795,8 @@ class Handler(BaseHTTPRequestHandler):
             if route == '/api/metadata/read':
                 with self.app.tag_lock:
                     job, path = self.app.track(value.get('id'))
-                    return self.reply(200, {'metadata': read_tags(path), 'revision': revision(path), 'path': str(path)})
+                    details = self.app.read_metadata(job, path)
+                    return self.reply(200, {'metadata': details['metadata'], 'inferred': details['inferred'], 'revision': revision(path), 'path': str(path)})
             if route == '/api/metadata/save':
                 return self.reply(200, self.app.edit_metadata(value))
             if route == '/api/folders':
@@ -775,6 +828,8 @@ class Handler(BaseHTTPRequestHandler):
         if not self.app.upload_slots.acquire(blocking=False):
             return self.reply(429, {'error': 'Three uploads are already running. Try again shortly.'})
         source = None
+        upload_id = None
+        reserved = False
         try:
             args = parse_qs(urlsplit(self.path).query)
             name = safe_name(args.get('name', [''])[0])
@@ -786,12 +841,14 @@ class Handler(BaseHTTPRequestHandler):
             if layout not in ('flat', 'album', 'single'):
                 raise ValueError('Invalid folder layout.')
             if layout != 'flat':
-                artist = primary_artist(metadata)
-                release = metadata.get('album')
-                if not artist or (layout == 'album' and not release):
-                    raise ValueError('Enter artist and release details before uploading into album or single folders.')
-                folder_part(artist)
-                if layout == 'album':
+                preview, _ = metadata_from_filename(name, metadata, blocked=set(metadata))
+                artist = primary_artist(preview)
+                release = preview.get('album') or (preview.get('title') if layout == 'single' else '')
+                # Embedded tags are read after upload; don't reject tagged files
+                # just because their filename cannot supply every value.
+                if artist:
+                    folder_part(artist)
+                if release:
                     folder_part(release)
             folder = self.app.folder(args.get('folder', [''])[0])
             if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
@@ -799,6 +856,21 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get('Content-Length', '0'))
             if length <= 0 or length > 10 * 1024 ** 3:
                 raise ValueError('Choose a non-empty file smaller than 10 GB.')
+            upload_id = self.headers.get('X-MediaDrop-Upload-ID')
+            fingerprint = hashlib.sha256(json.dumps([folder['id'], name, metadata, layout, length], sort_keys=True).encode()).hexdigest()
+            if upload_id:
+                if not re.fullmatch(r'[A-Za-z0-9-]{16,80}', upload_id):
+                    raise ValueError('Invalid upload identifier.')
+                with self.app.lock:
+                    existing = next((j for j in self.app.jobs if j.get('client_upload_id') == upload_id), None)
+                    if existing:
+                        if existing.get('upload_fingerprint') != fingerprint:
+                            raise ValueError('This upload identifier already belongs to a different file or destination.')
+                        return self.reply(202, {'job': existing['id'], 'reused': True})
+                    if upload_id in self.app.active_uploads:
+                        return self.reply(409, {'error': 'This upload is already being received. Retry shortly.'})
+                    self.app.active_uploads.add(upload_id)
+                    reserved = True
             if shutil.disk_usage(self.app.incoming).free < length + 128 * 1024 ** 2:
                 raise ValueError('The server has insufficient space for this upload.')
             job_id = uuid.uuid4().hex
@@ -812,6 +884,8 @@ class Handler(BaseHTTPRequestHandler):
                     stream.write(chunk)
                     remaining -= len(chunk)
             job = {'id': job_id, 'name': name, 'folder': folder['name'], 'destination': folder['path'], 'status': 'queued', 'progress': 0, 'created': time.time(), 'bytes': length, 'metadata': metadata, 'layout': layout, 'library_root': folder['path']}
+            if upload_id:
+                job.update(client_upload_id=upload_id, upload_fingerprint=fingerprint)
             with self.app.lock:
                 self.app.jobs.append(job)
                 self.app.save_jobs()
@@ -821,6 +895,9 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             if source:
                 source.unlink(missing_ok=True)
+            if reserved:
+                with self.app.lock:
+                    self.app.active_uploads.discard(upload_id)
             self.app.upload_slots.release()
 
 

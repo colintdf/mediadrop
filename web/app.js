@@ -65,13 +65,27 @@ $('dropzone').addEventListener('dragleave',e=>{e.preventDefault();if(--dragDepth
 $('dropzone').addEventListener('drop',e=>{e.preventDefault();dragDepth=0;$('dropzone').classList.remove('drag');addFiles(Array.from(e.dataTransfer.files));});
 // Prevent a drop outside the target from navigating away from an upload.
 window.addEventListener('dragover',e=>e.preventDefault());window.addEventListener('drop',e=>e.preventDefault());
+function inferFilename(filename){
+  let name=filename.replace(/\.[^.]+$/,'').replace(/_/g,' ').replace(/\s+/g,' ').trim();
+  name=name.replace(/^(?:CD|Disc)\s*\d+\s*[-_. ]+\s*/i,'');
+  name=name.replace(/^\d{1,2}[-.]\d{1,3}\s+[-\u2013\u2014]\s+/,'');
+  name=name.replace(/^\d{1,3}(?:\s+[-\u2013\u2014]\s+|[.)]\s*|-\s*)(?=\S)/,'');
+  name=name.replace(/^0\d\s+(?=\S)/,'').trim();
+  if(!name)return {};
+  const match=name.match(/^(.*?)\s+[-\u2013\u2014]\s+(.+)$/u);
+  if(match&&/\p{L}/u.test(match[1])&&/[\p{L}\p{N}]/u.test(match[2])){
+    const title=match[2].replace(/^\d{1,3}(?:\s+[-\u2013\u2014]\s+|[.)]\s*)(?=\S)/,'').trim();
+    return {artist:match[1].trim(),title};
+  }
+  return {title:name};
+}
 function addFiles(files){
   const folder=state.folders.find(f=>f.id===selected && f.available);
   if(!folder || !state.conversion){banner('Add and choose an available music folder before uploading.');return;}
   const rejected=[];
   for(const file of files){
     if(!supported.test(file.name) || !file.size || file.size>10*1024**3){rejected.push(file.name);continue;}
-    pending.push({uid:crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random(),file,name:file.name,bytes:file.size,folder:folder.name,folderId:folder.id,status:'draft',progress:0,metadata:{},layout:'flat'});
+    pending.push({uid:crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random(),file,name:file.name,bytes:file.size,folder:folder.name,folderId:folder.id,status:'draft',progress:0,metadata:{},inferred:inferFilename(file.name),layout:'flat'});
   }
   banner(rejected.length?`Not added: ${rejected.join(', ')}. Choose supported audio files smaller than 10 GB. This version accepts files, not folders.`:'');
   renderTransfers();
@@ -119,7 +133,7 @@ function previewPath(){
   if(layout==='keep'){$('trackPath').textContent=editing.path||'';return;}
   let parts=[folder?.path||'Choose a music folder'];
   if(layout==='single'||layout==='album')parts.push(pathPart(primaryArtist(tags))||'[Artist]');
-  if(layout==='album')parts.push(pathPart(tags.album)||'[Album]');
+  if(layout==='single'||layout==='album')parts.push(pathPart(tags.album||(layout==='single'?tags.title:''))||(layout==='single'?'[Single title]':'[Album]'));
   parts.push(editing.draft?editing.name.replace(/\.[^.]+$/,'.mp3'):editing.path.split('/').pop());
   $('trackPath').textContent=parts.join('/');
 }
@@ -127,18 +141,18 @@ async function openMetadata(id,draft=false){
   if($('metadataDialog').open)return;
   $('metadataError').textContent='';$('sharedFields').checked=false;
   try{
-    let metadata,track,path='',rev;
-    if(draft){track=pending.find(j=>j.uid===id&&j.status==='draft');if(!track)return;metadata=track.metadata||{};}
-    else{const result=await api('/api/metadata/read',{id});metadata=result.metadata;path=result.path;rev=result.revision;track=state.jobs.find(j=>j.id===id)||libraryTracks.find(j=>j.id===id)||{name:path.split('/').pop()};}
+    let metadata,track,path='',rev,inferred={};
+    if(draft){track=pending.find(j=>j.uid===id&&j.status==='draft');if(!track)return;inferred=track.inferred||{};metadata={...inferred,...(track.metadata||{})};}
+    else{const result=await api('/api/metadata/read',{id});metadata=result.metadata;inferred=result.inferred||{};path=result.path;rev=result.revision;track=state.jobs.find(j=>j.id===id)||libraryTracks.find(j=>j.id===id)||{name:path.split('/').pop()};}
     editing={id,draft,name:track.name,path,revision:rev,changed:new Set(),track};
     $('metadataTrack').textContent=track.name;
-    fields.forEach(([key])=>{$('tag-'+key).value=metadata[key]||'';});
+    fields.forEach(([key])=>{$('tag-'+key).value=metadata[key]||'';$('tag-'+key).dataset.inferred=inferred[key]?'true':'false';});
     $('trackFolder').innerHTML=state.folders.filter(f=>f.type==='music').map(f=>`<option value="${escapeHTML(f.id)}">${escapeHTML(f.name)}</option>`).join('');
     $('trackFolder').value=track.folderId||track.folder_id||selected||'';
     $('trackLayout').querySelector('[value="keep"]').disabled=draft;
     $('trackLayout').value=draft?(track.layout||'flat'):'keep';
     $('sharedFieldsLabel').hidden=!draft;
-    $('metadataHint').textContent=draft?'Separate track performers with semicolons; Album artist keeps a release together. Only fields you change replace existing tags. Leave other fields untouched to preserve them. Singles sit in the artist folder; albums get their own folder.':'Current tags are read from the audio file. Clearing a field removes that tag. Choose a destination to move the track without re-encoding.';
+    $('metadataHint').textContent=draft?'Separate track performers with semicolons; Album artist keeps a release together. Only fields you change replace existing tags. Leave other fields untouched to preserve them. A single gets its own release folder. Filename suggestions fill missing tags on upload; existing embedded tags win unless you edit a field.':'Current tags are read from the audio file. Missing artist/title values may be suggested from its filename and will be stored when you save. Clearing a field removes that tag. Choose a destination to move the track without re-encoding.';
     $('saveMetadata').textContent=draft?'Save details before upload':'Save tags and location';
     previewPath();$('metadataDialog').showModal();
   }catch(e){banner(e.message);}
@@ -149,6 +163,7 @@ $('metadataForm').onsubmit=async e=>{
   try{
     const values=editorValues(),layout=$('trackLayout').value,folder=$('trackFolder').value;
     if(['single','album'].includes(layout)&&!primaryArtist(values))throw new Error('Enter an artist or album artist for the folder name.');
+    if(layout==='single'&&!(values.album||values.title))throw new Error('Enter a single title or release name for its folder.');
     if(layout==='album'&&!values.album)throw new Error('Enter the album name for its folder.');
     const changes=Object.fromEntries([...editing.changed].map(k=>[k,values[k]]));
     if(editing.draft){
@@ -195,7 +210,7 @@ async function refreshLibrary(){
     }else if(libraryView==='releases'){
       html=result.items.map((release,index)=>`<article class="release-card"><label class="tile-select"><input type="checkbox" data-select-release="${index}" ${selectedReleaseKeys.has(release.key)?'checked':''} aria-label="Select ${escapeHTML(release.name)}"><span>Select release</span></label><button class="library-tile release-tile" data-tile="${index}"><span class="tile-art tile-colour-${tileColour(release.name)}">${tilePhoto(release.image)}<span class="release-record" aria-hidden="true"><i></i></span><span class="release-type">${release.appears_on?'APPEARS ON':release.kind==='album'?'ALBUM':'SINGLE'}</span><span class="tile-open" aria-hidden="true">↗</span></span><strong>${escapeHTML(release.name)}</strong><small>${escapeHTML(release.appears_on?release.artist+' · ':'')}${escapeHTML(release.year?release.year+' · ':'')}${release.track_count} ${release.track_count===1?'track':'tracks'}</small></button></article>`).join('');
     }else{
-      html=result.items.map(t=>`<div class="transfer"><input class="track-select" type="checkbox" data-select-track="${escapeHTML(t.id)}" ${selectedTrackIds.has(t.id)?'checked':''} aria-label="Select ${escapeHTML(t.metadata.title||t.name)}"><span class="track-icon track-number">${escapeHTML(t.metadata.track?.split('/')[0]||'♫')}</span><div class="track-main"><strong>${escapeHTML(t.metadata.title||t.name)}</strong><small>${trackCredits(t)}</small><small>${escapeHTML(t.folder+' / '+t.relative)}</small></div><div class="track-buttons"><button class="edit-track" data-library-edit="${escapeHTML(t.id)}">Edit details</button></div></div>`).join('');
+      html=result.items.map(t=>`<div class="transfer"><input class="track-select" type="checkbox" data-select-track="${escapeHTML(t.id)}" ${selectedTrackIds.has(t.id)?'checked':''} aria-label="Select ${escapeHTML(t.metadata.title||t.name)}"><span class="track-icon track-number">${escapeHTML(t.metadata.track?.split('/')[0]||'♫')}</span><div class="track-main"><strong>${escapeHTML(t.metadata.title||t.name)}${Object.keys(t.inferred||{}).length?'<span class="inferred-badge">Filename</span>':''}</strong><small>${trackCredits(t)}</small><small>${escapeHTML(t.folder+' / '+t.relative)}</small></div><div class="track-buttons"><button class="edit-track" data-library-edit="${escapeHTML(t.id)}">Edit details</button></div></div>`).join('');
     }
     // Polling leaves focused tiles intact while the current view is unchanged.
     const markup=html||'<div class="empty library-empty">Nothing here yet.<small>Scan your music folders or try another search.</small></div>';
@@ -253,7 +268,9 @@ async function openBulk(scope){
       const allowed=bulkPlan.allowed.includes(key),value=bulkPlan.common[key];
       return `<div class="bulk-field ${allowed?'':'bulk-field-disabled'}"><label class="bulk-field-label"><input type="checkbox" data-bulk-key="${key}" ${allowed?'':'disabled'}> ${labels[key]}</label><input id="bulk-${key}" maxlength="300" value="${escapeHTML(value??'')}" placeholder="${value===null?'Mixed values: unchanged unless checked':'Check the field to change or clear it'}" aria-label="${labels[key]} value" disabled></div>`;
     }).join('');
-    $('bulkFields').querySelectorAll('[data-bulk-key]').forEach(input=>input.onchange=()=>{$('bulk-'+input.dataset.bulkKey).disabled=!input.checked;$('saveBulk').disabled=!$('bulkFields').querySelector('input[type=checkbox]:checked');});
+    $('bulkFields').querySelectorAll('[data-bulk-key]').forEach(input=>input.onchange=()=>{$('bulk-'+input.dataset.bulkKey).disabled=!input.checked;updateBulkSave();});
+    $('bulkInferFilename').checked=false;$('bulkInferFilename').disabled=!bulkPlan.inferred_count;
+    $('bulkInferenceHint').textContent=bulkPlan.inferred_count?`${bulkPlan.inferred_count} selected tracks have missing artist/title values detected from their own filenames. Existing tags, explicitly cleared fields and filenames stay unchanged.`:'No additional artist/title values could be detected for the selected tracks.';
     $('bulkAlbumHint').textContent=bulkPlan.allow_album?'All selected tracks belong to the same album, so its name can be changed explicitly. Folder names stay unchanged.':'Album names are protected for singles and mixed releases. Edit those individually to keep each release distinct.';
     $('bulkNames').innerHTML=bulkPlan.names.map(name=>`<li>${escapeHTML(name)}</li>`).join('');
     $('bulkProgress').textContent='';$('bulkResults').textContent='';$('bulkError').textContent='';$('saveBulk').disabled=true;$('saveBulk').hidden=false;
@@ -262,13 +279,18 @@ async function openBulk(scope){
 }
 $('closeBulk').onclick=()=>{if(!bulkRunning)$('bulkDialog').close();};
 $('bulkDialog').addEventListener('cancel',e=>{if(bulkRunning)e.preventDefault();});
+function updateBulkSave(){
+  $('saveBulk').disabled=!$('bulkFields').querySelector('input[type=checkbox]:checked')&&!$('bulkInferFilename').checked;
+}
+$('bulkInferFilename').onchange=updateBulkSave;
 $('bulkForm').onsubmit=async e=>{
   e.preventDefault();if(!bulkPlan||bulkRunning)return;
   const changes={};$('bulkFields').querySelectorAll('input[type=checkbox]:checked').forEach(input=>{changes[input.dataset.bulkKey]=$('bulk-'+input.dataset.bulkKey).value.trim();});
-  if(!Object.keys(changes).length)return;
+  if(!Object.keys(changes).length&&!$('bulkInferFilename').checked)return;
   $('saveBulk').disabled=true;$('bulkError').textContent='';bulkRunning=true;
   try{
-    await api('/api/bulk/save',{id:bulkPlan.id,metadata:changes});
+    await api('/api/bulk/save',{id:bulkPlan.id,metadata:changes,fill_missing_from_filename:$('bulkInferFilename').checked});
+    $('bulkInferFilename').disabled=true;
     $('bulkFields').querySelectorAll('input').forEach(input=>input.disabled=true);
     pollBulk();
   }catch(error){$('bulkError').textContent=error.message;bulkRunning=false;$('saveBulk').disabled=false;}

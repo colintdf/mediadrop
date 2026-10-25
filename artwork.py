@@ -94,7 +94,7 @@ class Artwork:
         if not path.startswith('/') or path.startswith('//') or '\\' in path or urllib.parse.urlsplit(path).scheme:
             raise ValueError('Invalid artwork server path.')
         settings = self.settings
-        headers = {'Accept': 'application/json', 'User-Agent': 'MediaDrop/1.4'}
+        headers = {'Accept': 'application/json', 'User-Agent': 'MediaDrop/1.5'}
         headers['X-Plex-Token' if settings['provider'] == 'plex' else 'X-Api-Key'] = settings['credential']
         request = urllib.request.Request(settings['url'] + path, headers=headers)
         try:

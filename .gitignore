@@ -18,3 +18,5 @@ server.lock
 *.wav
 *.flac
 *.m4a
+client/build/
+dist/

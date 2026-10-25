@@ -202,8 +202,8 @@ class Integration(unittest.TestCase):
         self.assertEqual(self.request(path,raw=self.wav(),metadata={'track':'-1'})[0],400)
         out=organised_folder(self.dest,{'artist':'../Artist','album':'A/B'},'album')
         self.assertTrue(out.is_relative_to(self.dest))
-        single=organised_folder(self.dest,{'artist':'Artist'},'single')
-        self.assertEqual(single,self.dest/'Artist')
+        single=organised_folder(self.dest,{'artist':'Artist','title':'Song'},'single')
+        self.assertEqual(single,self.dest/'Artist'/'Song')
         outside=self.root/'elsewhere'
         outside.mkdir()
         (self.dest/'Escape').symlink_to(outside,target_is_directory=True)
@@ -268,7 +268,7 @@ class Integration(unittest.TestCase):
     def test_healthcheck_is_public_and_contains_no_settings(self):
         code,health = self.request('/api/health')
         self.assertEqual(code,200)
-        self.assertEqual(health,{'status':'ok','version':'1.4'})
+        self.assertEqual(health,{'status':'ok','version':'1.5'})
         self.assertEqual(self.request('/api/state')[0],200)
 
     def test_container_data_environment_and_sigterm_shutdown(self):

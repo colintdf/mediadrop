@@ -1,0 +1,14 @@
+MediaDrop Ripper bundles unmodified FFmpeg 8.0.1, LAME and libdiscid.
+FFmpeg: https://ffmpeg.org/ LGPL 2.1 or later (this audio-only build).
+LAME: https://lame.sourceforge.io/ LGPL 2 or later.
+libdiscid: https://musicbrainz.org/doc/libdiscid LGPL 2.1 or later.
+Exact source archives, containing their license texts, are in Resources/Sources.
+The FFmpeg build recipe and disc ID helper source are included there too.
+FFmpeg's own libraries are compiled into its standalone executable; LAME and
+libdiscid are dynamic libraries under Contents/Frameworks and may be replaced.
+Modified executables/libraries require re-signing the bundle (an ad-hoc signature
+is sufficient). No Apple account or DRM prevents replacing these components.
+MusicBrainz metadata and Cover Art Archive images are fetched only on request.
+No metadata or artwork service credentials are required. Artwork is previewed;
+this first client does not embed it in MP3s. Use the server's Plex/Lidarr artwork
+integration for its library tiles.
