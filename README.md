@@ -193,7 +193,7 @@ Scan Library Files in Plex. Moving a file may affect existing Plex references.
 
 The native companion app lives in [client](client/README.md). It requires macOS
 15 or later and a connected audio CD drive. Download the matching Apple Silicon
-or Intel DMG from the latest successful **Mac CD client** Actions run. The app
+or Intel DMG from the latest **MediaDrop Ripper** prerelease on the Releases page. The app
 includes its encoder and disc ID helper, with no Terminal setup or Homebrew on
 the user's Mac. It connects to MediaDrop 1.5 or later over the local network.
 

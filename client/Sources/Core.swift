@@ -103,6 +103,11 @@ enum Core {
         }
         return result
     }
+    static func filename(number: Int, title: String) -> String {
+        var stem = String(format: "%02d", number) + " - " + title.replacingOccurrences(of: #"[/\\:*?\"<>|]"#, with: "_", options: .regularExpression)
+        while stem.utf8.count > 200 { stem.removeLast() }
+        return stem + ".mp3"
+    }
     static func uploadRequest(item: RipItem) throws -> URLRequest {
         var parts = URLComponents(url: item.server.appendingPathComponent("api/upload"), resolvingAgainstBaseURL: false)!
         parts.queryItems = [URLQueryItem(name: "folder", value: item.folder), URLQueryItem(name: "name", value: item.filename), URLQueryItem(name: "layout", value: "album")]

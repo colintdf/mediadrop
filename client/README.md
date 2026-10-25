@@ -6,9 +6,9 @@ LAME and libdiscid. No Python, Homebrew or Terminal is needed to run it.
 
 ## Install and use
 
-Open the latest successful **Mac CD client** run in this repository's Actions
-page and download the ARM64 artifact for Apple Silicon or X64 artifact for Intel.
-Unzip the artifact, open the DMG and drag the app to Applications.
+Open this repository's Releases page and download the latest MediaDrop Ripper
+DMG: arm64 for Apple Silicon or x86_64 for Intel. Open the DMG and drag the app
+to Applications. Build artifacts are also available on the Mac CD client Actions run.
 The initial app is ad-hoc signed, not Apple notarised. If blocked, open it once,
 then use System Settings > Privacy & Security > Open Anyway for this app.
 

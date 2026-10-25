@@ -24,6 +24,7 @@ final class RipperModel: ObservableObject {
     @Published var doubleRead = false
     private var device = ""
     private var discID = ""
+    private var lastLookup = Date.distantPast
     private var discKey = ""
     private var stopped = false
     private var task: Task<Void, Never>?
@@ -126,6 +127,9 @@ final class RipperModel: ObservableObject {
     private func lookupDisc() async throws {
         guard !discID.isEmpty else { throw RipError("A readable disc ID is needed for automatic lookup. You can enter the details manually.") }
         message = "Looking up the CD on MusicBrainz…"
+        let delay = 1.1 - Date().timeIntervalSince(lastLookup)
+        if delay > 0 { try await Task.sleep(nanoseconds:UInt64(delay * 1_000_000_000)) }
+        try checkStop(); lastLookup = Date()
         var parts = URLComponents(string: "https://musicbrainz.org/ws/2/discid/\(discID)")!
         parts.queryItems = [URLQueryItem(name: "fmt", value: "json"), URLQueryItem(name: "inc", value: "recordings+artist-credits+discids"), URLQueryItem(name: "cdstubs", value: "no")]
         var request = URLRequest(url: parts.url!); request.setValue("MediaDrop-Ripper/1.0 (https://github.com/colintdf/mediadrop)", forHTTPHeaderField: "User-Agent")
@@ -162,7 +166,7 @@ final class RipperModel: ObservableObject {
             // in the manifest to prevent accidental duplicate albums next time.
             if self.queue.contains(where: { $0.disc == self.discKey && $0.number == track.id && $0.server == base && $0.folder == self.folder }) { continue }
             let tags = ["title":track.title,"artist":track.artist.isEmpty ? self.artist : track.artist,"album":self.album,"album_artist":self.artist,"track":String(track.id),"disc":self.discNumber,"date":self.date,"genre":self.genre]
-            let filename = String(format: "%02d", track.id) + " - " + track.title.replacingOccurrences(of: #"[/\\:*?\"<>|]"#, with: "_", options: .regularExpression).prefix(70) + ".mp3"
+            let filename = Core.filename(number:track.id,title:track.title)
             self.queue.append(RipItem(disc:self.discKey,source:track.source,number:track.id,server:base,folder:self.folder,tags:tags,filename:filename))
         }
         try self.save(); try await self.processQueue()
